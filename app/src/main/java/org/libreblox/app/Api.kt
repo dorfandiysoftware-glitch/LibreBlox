@@ -1,6 +1,8 @@
 package org.libreblox.app
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -11,7 +13,7 @@ import java.util.UUID
 
 data class Presence(val type: Int, val location: String, val placeId: Long, val gameId: String)
 data class Friend(val user: User, val presence: Presence?)
-data class Convo(val id: Long, val title: String, val unread: Boolean, val avatar: String?)
+data class Convo(val id: String, val title: String, val unread: Boolean, val avatar: String?)
 data class Msg(val id: String, val senderId: Long, val text: String, val sent: String)
 
 class ApiException(val code: Int, val url: String) : Exception("HTTP $code\n$url")
@@ -144,6 +146,23 @@ object Api {
         return map { it.copy(avatar = a[it.id]) }
     }
 
+    /** Names for a list of ids: Roblox's friends endpoints return bare ids. */
+    suspend fun usersByIds(ids: List<Long>): List<User> {
+        val out = mutableListOf<User>()
+        for (chunk in ids.distinct().chunked(100)) {
+            val body = JSONObject().put("userIds", JSONArray(chunk)).put("excludeBannedUsers", false).toString()
+            val j = runCatching { JSONObject(request("https://users.roblox.com/v1/users", "POST", null, body)) }.getOrNull() ?: continue
+            out += j.optJSONArray("data").objects().map {
+                User(it.optLong("id"), it.optString("name"), it.optString("displayName").ifEmpty { it.optString("name") }, it.optBoolean("hasVerifiedBadge"))
+            }
+        }
+        val byId = out.associateBy { it.id }
+        return ids.mapNotNull { byId[it] }
+    }
+
+    private fun friendIds(j: JSONObject): List<Long> =
+        (j.optJSONArray("data") ?: j.optJSONArray("PageItems")).objects().map { it.optLong("id") }.filter { it != 0L }
+
     private fun gameFrom(o: JSONObject) = Game(
         universeId = o.optLong("universeId"),
         placeId = o.optLong("rootPlaceId"),
@@ -223,34 +242,44 @@ object Api {
 
     private suspend fun count(url: String): Long = runCatching { get(url).optLong("count") }.getOrDefault(0L)
 
-    suspend fun userDetails(id: Long): UserDetails {
-        val j = get("https://users.roblox.com/v1/users/$id")
+    suspend fun userDetails(id: Long): UserDetails = coroutineScope {
+        val profile = async { get("https://users.roblox.com/v1/users/$id") }
+        val big = async {
+            runCatching {
+                get("https://thumbnails.roblox.com/v1/users/avatar?userIds=$id&size=420x420&format=Png&isCircular=false")
+                    .optJSONArray("data").objects().firstOrNull()?.optString("imageUrl")?.ifEmpty { null }
+            }.getOrNull()
+        }
+        val friends = async {
+            runCatching {
+                val ids = friendIds(get("https://friends.roblox.com/v1/users/$id/friends")).take(30)
+                usersByIds(ids).withAvatars()
+            }.getOrDefault(emptyList())
+        }
+        val games = async {
+            runCatching {
+                get("https://games.roblox.com/v2/users/$id/games?limit=12&sortOrder=Desc").optJSONArray("data").objects().map {
+                    Game(it.optLong("id"), it.optJSONObject("rootPlace")?.optLong("id") ?: 0L, it.optString("name"))
+                }.withIcons()
+            }.getOrDefault(emptyList())
+        }
+        val nFriends = async { count("https://friends.roblox.com/v1/users/$id/friends/count") }
+        val nFollowers = async { count("https://friends.roblox.com/v1/users/$id/followers/count") }
+        val nFollowing = async { count("https://friends.roblox.com/v1/users/$id/followings/count") }
+        val j = profile.await()
         val user = User(id, j.optString("name"), j.optString("displayName").ifEmpty { j.optString("name") }, j.optBoolean("hasVerifiedBadge"))
-        val big = runCatching {
-            get("https://thumbnails.roblox.com/v1/users/avatar?userIds=$id&size=420x420&format=Png&isCircular=false")
-                .optJSONArray("data").objects().firstOrNull()?.optString("imageUrl")?.ifEmpty { null }
-        }.getOrNull()
-        val friends = runCatching {
-            get("https://friends.roblox.com/v1/users/$id/friends").optJSONArray("data").objects()
-                .map { User(it.optLong("id"), it.optString("name"), it.optString("displayName").ifEmpty { it.optString("name") }, it.optBoolean("hasVerifiedBadge")) }
-                .take(50).withAvatars()
-        }.getOrDefault(emptyList())
-        val games = runCatching {
-            get("https://games.roblox.com/v2/users/$id/games?limit=12&sortOrder=Desc").optJSONArray("data").objects().map {
-                Game(it.optLong("id"), it.optJSONObject("rootPlace")?.optLong("id") ?: 0L, it.optString("name"))
-            }.withIcons()
-        }.getOrDefault(emptyList())
-        return UserDetails(
-            user = user.copy(avatar = big),
+        val bigUrl = big.await()
+        UserDetails(
+            user = user.copy(avatar = bigUrl),
             description = j.optString("description"),
             created = j.optString("created").take(10),
             banned = j.optBoolean("isBanned"),
-            friends = count("https://friends.roblox.com/v1/users/$id/friends/count"),
-            followers = count("https://friends.roblox.com/v1/users/$id/followers/count"),
-            following = count("https://friends.roblox.com/v1/users/$id/followings/count"),
-            bigAvatar = big,
-            friendList = friends,
-            games = games,
+            friends = nFriends.await(),
+            followers = nFollowers.await(),
+            following = nFollowing.await(),
+            bigAvatar = bigUrl,
+            friendList = friends.await(),
+            games = games.await(),
         )
     }
 
@@ -266,15 +295,14 @@ object Api {
     }
 
     suspend fun friends(myId: Long, cookie: String): List<Friend> {
-        val users = get("https://friends.roblox.com/v1/users/$myId/friends", cookie).optJSONArray("data").objects().map {
-            User(it.optLong("id"), it.optString("name"), it.optString("displayName").ifEmpty { it.optString("name") }, it.optBoolean("hasVerifiedBadge"))
-        }.withAvatars()
+        val ids = friendIds(get("https://friends.roblox.com/v1/users/$myId/friends", cookie))
+        val users = usersByIds(ids).withAvatars()
         val pres = runCatching { presence(users.map { it.id }, cookie) }.getOrDefault(emptyMap())
         return users.map { Friend(it, pres[it.id]) }.sortedWith(compareByDescending<Friend> { it.presence?.type ?: 0 }.thenBy { it.user.display.lowercase() })
     }
 
-    suspend fun favorites(userId: Long): List<Game> =
-        get("https://games.roblox.com/v2/users/$userId/favorite/games?limit=30&sortOrder=Desc").optJSONArray("data").objects().map {
+    suspend fun favorites(userId: Long, cookie: String): List<Game> =
+        get("https://games.roblox.com/v2/users/$userId/favorite/games?limit=30&sortOrder=Desc", cookie).optJSONArray("data").objects().map {
             Game(it.optLong("id"), it.optJSONObject("rootPlace")?.optLong("id") ?: 0L, it.optString("name"))
         }.filter { it.universeId != 0L }.withIcons()
 
@@ -285,27 +313,36 @@ object Api {
         request("https://games.roblox.com/v1/games/$universeId/favorites", "POST", cookie, JSONObject().put("isFavorited", value).toString())
     }
 
+    private const val CHAT = "https://apis.roblox.com/platform-chat-api/v1"
+
     suspend fun conversations(myId: Long, cookie: String): List<Convo> {
-        val arr = getArr("https://chat.roblox.com/v2/get-user-conversations?pageNumber=1&pageSize=30", cookie).objects()
-        val firstOthers = arr.map { c ->
-            c.optJSONArray("participants").objects().firstOrNull { it.optLong("targetId") != myId }?.optLong("targetId")
+        val j = get("$CHAT/get-user-conversations?include_user_data=true&pageSize=30", cookie)
+        val arr = (j.optJSONArray("conversations") ?: JSONArray()).objects()
+        fun others(c: JSONObject): List<Long> {
+            val a = c.optJSONArray("participant_user_ids") ?: return emptyList()
+            return (0 until a.length()).map { a.optLong(it) }.filter { it != myId && it != 0L }
         }
-        val avatars = headshots(firstOthers.filterNotNull().distinct().take(100))
-        return arr.mapIndexed { idx, c ->
-            val others = c.optJSONArray("participants").objects().filter { it.optLong("targetId") != myId }.map { it.optString("name") }
-            val title = c.optJSONObject("conversationTitle")?.optString("titleForViewer").orEmpty().ifEmpty { c.optString("title") }
-                .ifEmpty { others.joinToString(", ") }
-            Convo(c.optLong("id"), title, c.optBoolean("hasUnreadMessages"), firstOthers[idx]?.let { avatars[it] })
+        val allIds = arr.flatMap { others(it) }.distinct()
+        val users = usersByIds(allIds).associateBy { it.id }
+        val avatars = headshots(arr.mapNotNull { others(it).firstOrNull() }.distinct().take(100))
+        return arr.map { c ->
+            val o = others(c)
+            val title = c.optString("name").takeIf { it.isNotEmpty() && it != "null" }
+                ?: o.mapNotNull { users[it]?.display }.joinToString(", ").ifEmpty { "Chat" }
+            Convo(c.optString("id"), title, c.optInt("unread_message_count") > 0, o.firstOrNull()?.let { avatars[it] })
         }
     }
 
-    suspend fun messages(conversationId: Long, cookie: String): List<Msg> =
-        getArr("https://chat.roblox.com/v2/get-messages?conversationId=$conversationId&pageSize=40", cookie).objects().map {
-            Msg(it.optString("id"), it.optLong("senderTargetId"), it.optString("content"), it.optString("sent"))
-        }.reversed()
+    suspend fun messages(conversationId: String, cookie: String): List<Msg> {
+        val j = get("$CHAT/get-conversation-messages?conversation_id=${enc(conversationId)}&pageSize=40", cookie)
+        return j.optJSONArray("messages").objects().map {
+            Msg(it.optString("id"), it.optLong("sender_user_id"), it.optString("content"), it.optString("created_at"))
+        }.sortedBy { it.sent }
+    }
 
-    suspend fun sendMessage(conversationId: Long, text: String, cookie: String) {
-        request("https://chat.roblox.com/v2/send-message", "POST", cookie,
-            JSONObject().put("conversationId", conversationId).put("message", text).toString())
+    suspend fun sendMessage(conversationId: String, text: String, cookie: String) {
+        val body = JSONObject().put("conversation_id", conversationId)
+            .put("messages", JSONArray().put(JSONObject().put("content", text))).toString()
+        request("$CHAT/send-messages", "POST", cookie, body)
     }
 }

@@ -99,8 +99,9 @@ class AppVm(private val app: Application) : AndroidViewModel(app) {
 
     fun loadFavorites() {
         val me = account ?: return
+        val c = cookie() ?: return
         favorites = Load.Busy
-        viewModelScope.launch { favorites = try { Load.Ok(Api.favorites(me.id)) } catch (e: Exception) { err(e) } }
+        viewModelScope.launch { favorites = try { Load.Ok(Api.favorites(me.id, c)) } catch (e: Exception) { err(e) } }
     }
 
     fun loadFriends() {
