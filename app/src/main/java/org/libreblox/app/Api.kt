@@ -9,6 +9,11 @@ import java.net.URL
 import java.net.URLEncoder
 import java.util.UUID
 
+data class Presence(val type: Int, val location: String, val placeId: Long, val gameId: String)
+data class Friend(val user: User, val presence: Presence?)
+data class Convo(val id: Long, val title: String, val unread: Boolean, val avatar: String?)
+data class Msg(val id: String, val senderId: Long, val text: String, val sent: String)
+
 class ApiException(val code: Int, val url: String) : Exception("HTTP $code\n$url")
 
 data class Game(
@@ -56,21 +61,41 @@ data class UserDetails(
 object Api {
     private val session = UUID.randomUUID().toString()
 
-    private suspend fun get(url: String, cookie: String? = null): JSONObject = withContext(Dispatchers.IO) {
-        val c = URL(url).openConnection() as HttpURLConnection
-        try {
-            c.connectTimeout = 15000
-            c.readTimeout = 20000
-            c.setRequestProperty("Accept", "application/json")
-            c.setRequestProperty("User-Agent", "LibreBlox/0.1 (Android)")
-            if (cookie != null) c.setRequestProperty("Cookie", ".ROBLOSECURITY=$cookie")
-            val code = c.responseCode
-            if (code !in 200..299) throw ApiException(code, url)
-            JSONObject(c.inputStream.bufferedReader().use { it.readText() })
-        } finally {
-            c.disconnect()
+    private var csrf: String? = null
+
+    private suspend fun request(url: String, method: String = "GET", cookie: String? = null, body: String? = null): String =
+        withContext(Dispatchers.IO) {
+            for (attempt in 0..1) {
+                val c = URL(url).openConnection() as HttpURLConnection
+                try {
+                    c.requestMethod = method
+                    c.connectTimeout = 15000
+                    c.readTimeout = 20000
+                    c.setRequestProperty("Accept", "application/json")
+                    c.setRequestProperty("User-Agent", "LibreBlox/0.3 (Android)")
+                    if (cookie != null) c.setRequestProperty("Cookie", ".ROBLOSECURITY=$cookie")
+                    if (method != "GET") csrf?.let { c.setRequestProperty("x-csrf-token", it) }
+                    if (body != null) {
+                        c.doOutput = true
+                        c.setRequestProperty("Content-Type", "application/json")
+                        c.outputStream.use { it.write(body.toByteArray()) }
+                    }
+                    val code = c.responseCode
+                    if (code == 403 && method != "GET" && attempt == 0) {
+                        val t = c.getHeaderField("x-csrf-token")
+                        if (t != null) { csrf = t; continue }
+                    }
+                    if (code !in 200..299) throw ApiException(code, url)
+                    return@withContext c.inputStream.bufferedReader().use { it.readText() }
+                } finally {
+                    c.disconnect()
+                }
+            }
+            throw ApiException(403, url)
         }
-    }
+
+    private suspend fun get(url: String, cookie: String? = null): JSONObject = JSONObject(request(url, "GET", cookie))
+    private suspend fun getArr(url: String, cookie: String?): JSONArray = JSONArray(request(url, "GET", cookie))
 
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
     private fun JSONArray?.objects(): List<JSONObject> =
@@ -227,5 +252,60 @@ object Api {
             friendList = friends,
             games = games,
         )
+    }
+
+    // ---------------- account: friends, favorites, chat ----------------
+
+    suspend fun presence(ids: List<Long>, cookie: String): Map<Long, Presence> {
+        if (ids.isEmpty()) return emptyMap()
+        val body = JSONObject().put("userIds", JSONArray(ids.take(200))).toString()
+        val j = JSONObject(request("https://presence.roblox.com/v1/presence/users", "POST", cookie, body))
+        return j.optJSONArray("userPresences").objects().associate {
+            it.optLong("userId") to Presence(it.optInt("userPresenceType"), it.optString("lastLocation"), it.optLong("rootPlaceId").takeIf { p -> p != 0L } ?: it.optLong("placeId"), it.optString("gameId"))
+        }
+    }
+
+    suspend fun friends(myId: Long, cookie: String): List<Friend> {
+        val users = get("https://friends.roblox.com/v1/users/$myId/friends", cookie).optJSONArray("data").objects().map {
+            User(it.optLong("id"), it.optString("name"), it.optString("displayName").ifEmpty { it.optString("name") }, it.optBoolean("hasVerifiedBadge"))
+        }.withAvatars()
+        val pres = runCatching { presence(users.map { it.id }, cookie) }.getOrDefault(emptyMap())
+        return users.map { Friend(it, pres[it.id]) }.sortedWith(compareByDescending<Friend> { it.presence?.type ?: 0 }.thenBy { it.user.display.lowercase() })
+    }
+
+    suspend fun favorites(userId: Long): List<Game> =
+        get("https://games.roblox.com/v2/users/$userId/favorite/games?limit=30&sortOrder=Desc").optJSONArray("data").objects().map {
+            Game(it.optLong("id"), it.optJSONObject("rootPlace")?.optLong("id") ?: 0L, it.optString("name"))
+        }.filter { it.universeId != 0L }.withIcons()
+
+    suspend fun isFavorite(universeId: Long, cookie: String): Boolean =
+        get("https://games.roblox.com/v1/games/$universeId/favorites", cookie).optBoolean("isFavorited")
+
+    suspend fun setFavorite(universeId: Long, value: Boolean, cookie: String) {
+        request("https://games.roblox.com/v1/games/$universeId/favorites", "POST", cookie, JSONObject().put("isFavorited", value).toString())
+    }
+
+    suspend fun conversations(myId: Long, cookie: String): List<Convo> {
+        val arr = getArr("https://chat.roblox.com/v2/get-user-conversations?pageNumber=1&pageSize=30", cookie).objects()
+        val firstOthers = arr.map { c ->
+            c.optJSONArray("participants").objects().firstOrNull { it.optLong("targetId") != myId }?.optLong("targetId")
+        }
+        val avatars = headshots(firstOthers.filterNotNull().distinct().take(100))
+        return arr.mapIndexed { idx, c ->
+            val others = c.optJSONArray("participants").objects().filter { it.optLong("targetId") != myId }.map { it.optString("name") }
+            val title = c.optJSONObject("conversationTitle")?.optString("titleForViewer").orEmpty().ifEmpty { c.optString("title") }
+                .ifEmpty { others.joinToString(", ") }
+            Convo(c.optLong("id"), title, c.optBoolean("hasUnreadMessages"), firstOthers[idx]?.let { avatars[it] })
+        }
+    }
+
+    suspend fun messages(conversationId: Long, cookie: String): List<Msg> =
+        getArr("https://chat.roblox.com/v2/get-messages?conversationId=$conversationId&pageSize=40", cookie).objects().map {
+            Msg(it.optString("id"), it.optLong("senderTargetId"), it.optString("content"), it.optString("sent"))
+        }.reversed()
+
+    suspend fun sendMessage(conversationId: Long, text: String, cookie: String) {
+        request("https://chat.roblox.com/v2/send-message", "POST", cookie,
+            JSONObject().put("conversationId", conversationId).put("message", text).toString())
     }
 }

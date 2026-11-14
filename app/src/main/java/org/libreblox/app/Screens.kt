@@ -71,6 +71,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 // ---------------- helpers ----------------
 
@@ -169,33 +170,6 @@ fun GameGrid(list: List<Game>, header: (@Composable () -> Unit)? = null, onGame:
 // ---------------- tabs ----------------
 
 @Composable
-fun GamesTab(vm: AppVm, modifier: Modifier, onGame: (Game) -> Unit) {
-    val searching = vm.gameSearch !is Load.Idle
-    Column(modifier.fillMaxSize()) {
-        SearchField(vm.gameQuery, stringResource(R.string.search_games), { vm.gameQuery = it }, vm::searchGames, Modifier.padding(16.dp, 8.dp))
-        if (searching) {
-            when (val s = vm.gameSearch) {
-                Load.Busy -> Centered { CircularProgressIndicator() }
-                is Load.Err -> ErrorBox(s.msg, vm::searchGames)
-                is Load.Ok -> if (s.v.isEmpty()) Centered { Text(stringResource(R.string.no_results)) } else GameGrid(s.v, onGame = onGame)
-                Load.Idle -> {}
-            }
-        } else {
-            if (vm.sorts.size > 1) LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(vm.sorts, key = { it.id }) { s ->
-                    FilterChip(selected = s.id == vm.sortId, onClick = { vm.pickSort(s.id) }, label = { Text(s.title) })
-                }
-            }
-            when (val g = vm.games) {
-                Load.Busy, Load.Idle -> Centered { CircularProgressIndicator() }
-                is Load.Err -> ErrorBox(g.msg, vm::loadHome)
-                is Load.Ok -> if (g.v.isEmpty()) Centered { Text(stringResource(R.string.no_results)) } else GameGrid(g.v, onGame = onGame)
-            }
-        }
-    }
-}
-
-@Composable
 fun UserRow(u: User, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
         AsyncImage(u.avatar, null, Modifier.size(52.dp).clip(CircleShape), contentScale = ContentScale.Crop)
@@ -203,20 +177,6 @@ fun UserRow(u: User, onClick: () -> Unit) {
         Column {
             Text(u.display, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
             Text("@${u.name}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
-    }
-}
-
-@Composable
-fun PeopleTab(vm: AppVm, modifier: Modifier, onUser: (User) -> Unit) {
-    Column(modifier.fillMaxSize()) {
-        SearchField(vm.userQuery, stringResource(R.string.search_people), { vm.userQuery = it }, vm::searchUsers, Modifier.padding(16.dp, 8.dp))
-        when (val s = vm.userSearch) {
-            Load.Idle -> Centered { Text(stringResource(R.string.people_hint), color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            Load.Busy -> Centered { CircularProgressIndicator() }
-            is Load.Err -> ErrorBox(s.msg, vm::searchUsers)
-            is Load.Ok -> if (s.v.isEmpty()) Centered { Text(stringResource(R.string.no_results)) }
-            else LazyColumn(Modifier.fillMaxSize()) { items(s.v, key = { it.id }) { UserRow(it) { onUser(it) } } }
         }
     }
 }
@@ -253,7 +213,7 @@ fun SettingsTab(
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(20.dp)) {
             Column(Modifier.padding(vertical = 8.dp)) {
                 Text(stringResource(R.string.theme), Modifier.padding(16.dp, 8.dp), style = MaterialTheme.typography.titleMedium)
-                listOf(R.string.theme_system, R.string.theme_light, R.string.theme_dark, R.string.theme_amoled).forEachIndexed { i, r ->
+                listOf(R.string.theme_roblox, R.string.theme_system, R.string.theme_light, R.string.theme_dark, R.string.theme_amoled).forEachIndexed { i, r ->
                     Row(Modifier.fillMaxWidth().clickable { onTheme(i) }.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(theme == i, { onTheme(i) })
                         Text(stringResource(r))
@@ -323,11 +283,13 @@ fun GameScreen(base: Game, onBack: () -> Unit, onUser: (Long) -> Unit) {
                             likePercent(d.game)?.let { Text(stringResource(R.string.likes_fmt, it), style = MaterialTheme.typography.bodyMedium) }
                         }
                     }
-                    Button({ openPlay(ctx, d.game.placeId) }, Modifier.fillMaxWidth().height(52.dp)) {
+                    Button({ openPlay(ctx, d.game.placeId) }, Modifier.fillMaxWidth().height(52.dp),
+                        colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = RobloxGreen, contentColor = androidx.compose.ui.graphics.Color.White)) {
                         Icon(Icons.Default.PlayArrow, null)
                         Spacer(Modifier.width(8.dp))
                         Text(stringResource(R.string.play))
                     }
+                    FavoriteButton(d.game.universeId)
                     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(20.dp)) {
                         Row(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
                             Stat(stringResource(R.string.stat_playing), compact(d.game.players), Modifier.weight(1f))
@@ -441,4 +403,30 @@ fun LoginScreen(onBack: () -> Unit, onDone: () -> Unit) {
             onRelease = { it.destroy() },
         )
     }
+}
+
+@Composable
+fun FavoriteButton(universeId: Long) {
+    val ctx = LocalContext.current
+    val cookie = remember { Session.load(ctx) } ?: return
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    var fav by remember { mutableStateOf<Boolean?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(universeId) { fav = try { Api.isFavorite(universeId, cookie) } catch (e: Exception) { error = e.message; null } }
+    val v = fav
+    if (v != null) {
+        FilledTonalButton(
+            onClick = {
+                if (busy) return@FilledTonalButton
+                busy = true
+                scope.launch {
+                    try { Api.setFavorite(universeId, !v, cookie); fav = !v; error = null } catch (e: Exception) { error = e.message }
+                    busy = false
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+        ) { Text(stringResource(if (v) R.string.favorite_remove else R.string.favorite_add)) }
+    }
+    error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
 }

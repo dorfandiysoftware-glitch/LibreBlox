@@ -45,4 +45,26 @@
     <string name="logout">Вийти</string>
     <string name="my_profile">Мій профіль</string>
     <string name="login_note">Вхід відбувається на офіційній сторінці Roblox. LibreBlox не бачить ваш пароль; зберігається лише сесія, зашифрована на цьому пристрої.</string>
+    <string name="tab_home">Головна</string>
+    <string name="tab_search">Пошук</string>
+    <string name="tab_friends">Друзі</string>
+    <string name="tab_chat">Чат</string>
+    <string name="theme_roblox">Roblox</string>
+    <string name="hello_fmt">Привіт, %1$s</string>
+    <string name="favorites">Вподобане</string>
+    <string name="friends_count_fmt">Друзі (%1$d)</string>
+    <string name="login_required">Увійдіть, щоб це побачити</string>
+    <string name="games_hint">Введіть назву гри й натисніть пошук</string>
+    <string name="no_friends">Друзів поки немає</string>
+    <string name="friend_online">Онлайн</string>
+    <string name="friend_offline">Офлайн</string>
+    <string name="friend_studio">У Roblox Studio</string>
+    <string name="friend_in_game">У грі</string>
+    <string name="friend_in_game_fmt">Грає в %1$s</string>
+    <string name="join">Приєднатися</string>
+    <string name="chat_empty">Немає розмов</string>
+    <string name="chat_input">Повідомлення</string>
+    <string name="chat_send">Надіслати</string>
+    <string name="favorite_add">Додати до вподобаного</string>
+    <string name="favorite_remove">Прибрати з вподобаного</string>
 </resources>

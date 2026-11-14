@@ -45,4 +45,26 @@
     <string name="logout">Log out</string>
     <string name="my_profile">My profile</string>
     <string name="login_note">Log in on the official Roblox page. LibreBlox never sees your password; only the session is kept, encrypted on this device.</string>
+    <string name="tab_home">Home</string>
+    <string name="tab_search">Search</string>
+    <string name="tab_friends">Friends</string>
+    <string name="tab_chat">Chat</string>
+    <string name="theme_roblox">Roblox</string>
+    <string name="hello_fmt">Hello, %1$s</string>
+    <string name="favorites">Favorites</string>
+    <string name="friends_count_fmt">Friends (%1$d)</string>
+    <string name="login_required">Log in to see this</string>
+    <string name="games_hint">Type a game name and press search</string>
+    <string name="no_friends">No friends yet</string>
+    <string name="friend_online">Online</string>
+    <string name="friend_offline">Offline</string>
+    <string name="friend_studio">In Roblox Studio</string>
+    <string name="friend_in_game">In an experience</string>
+    <string name="friend_in_game_fmt">Playing %1$s</string>
+    <string name="join">Join</string>
+    <string name="chat_empty">No conversations</string>
+    <string name="chat_input">Message</string>
+    <string name="chat_send">Send</string>
+    <string name="favorite_add">Add to favorites</string>
+    <string name="favorite_remove">Remove from favorites</string>
 </resources>

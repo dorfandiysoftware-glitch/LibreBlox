@@ -11,7 +11,9 @@ import androidx.activity.viewModels
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -45,14 +47,14 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         val prefs = getSharedPreferences("lb", Context.MODE_PRIVATE)
         setContent {
-            var theme by remember { mutableIntStateOf(prefs.getInt("theme", 0)) }
-            var dynamic by remember { mutableStateOf(prefs.getBoolean("dynamic", true)) }
+            var theme by remember { mutableIntStateOf(prefs.getInt("theme_v3", 0)) }
+            var dynamic by remember { mutableStateOf(prefs.getBoolean("dynamic_v3", false)) }
             LibreTheme(theme, dynamic) {
                 Surface(color = MaterialTheme.colorScheme.background) {
                     Root(
                         vm, theme, dynamic,
-                        onTheme = { theme = it; prefs.edit().putInt("theme", it).apply() },
-                        onDynamic = { dynamic = it; prefs.edit().putBoolean("dynamic", it).apply() },
+                        onTheme = { theme = it; prefs.edit().putInt("theme_v3", it).apply() },
+                        onDynamic = { dynamic = it; prefs.edit().putBoolean("dynamic_v3", it).apply() },
                     )
                 }
             }
@@ -62,31 +64,39 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun LibreTheme(theme: Int, dynamic: Boolean, content: @Composable () -> Unit) {
-    val dark = when (theme) { 1 -> false; 2, 3 -> true; else -> isSystemInDarkTheme() }
+    // theme: 0 Roblox, 1 system, 2 light, 3 dark, 4 AMOLED
+    val dark = when (theme) { 0, 3, 4 -> true; 2 -> false; else -> isSystemInDarkTheme() }
     val ctx = LocalContext.current
     var scheme = when {
+        theme == 0 -> darkColorScheme(
+            primary = Color(0xFF335FFF), onPrimary = Color.White, secondary = Color(0xFF00B06F),
+            background = Color(0xFF232527), onBackground = Color.White, surface = Color(0xFF232527), onSurface = Color.White,
+            onSurfaceVariant = Color(0xFFBDBEBE),
+            surfaceContainer = Color(0xFF2E3033), surfaceContainerHigh = Color(0xFF393B3D), surfaceContainerHighest = Color(0xFF45474A),
+        )
         dynamic && Build.VERSION.SDK_INT >= 31 -> if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
         dark -> darkColorScheme(primary = Color(0xFF66BB6A), secondary = Color(0xFF81C784))
         else -> lightColorScheme(primary = Color(0xFF2E7D32), secondary = Color(0xFF388E3C))
     }
-    if (theme == 3) scheme = scheme.copy(
+    if (theme == 4) scheme = scheme.copy(
         background = Color.Black, surface = Color.Black,
         surfaceContainer = Color(0xFF0E0E0E), surfaceContainerHigh = Color(0xFF161616), surfaceContainerHighest = Color(0xFF1E1E1E),
     )
     MaterialTheme(colorScheme = scheme, content = content)
 }
 
-private enum class Tab { GAMES, PEOPLE, SETTINGS }
+private enum class Tab { HOME, SEARCH, FRIENDS, CHAT, MORE }
 
 @Composable
 private fun Root(vm: AppVm, theme: Int, dynamic: Boolean, onTheme: (Int) -> Unit, onDynamic: (Boolean) -> Unit) {
-    var tab by rememberSaveable { mutableStateOf(Tab.GAMES) }
+    var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
     val top = vm.stack.lastOrNull()
     BackHandler(top != null) { vm.stack.removeAt(vm.stack.lastIndex) }
     when (top) {
         is Screen.GameS -> GameScreen(top.game, onBack = { vm.stack.removeAt(vm.stack.lastIndex) }, onUser = { vm.stack.add(Screen.UserS(it)) })
         is Screen.UserS -> UserScreen(top.id, onBack = { vm.stack.removeAt(vm.stack.lastIndex) },
             onGame = { vm.stack.add(Screen.GameS(it)) }, onUser = { vm.stack.add(Screen.UserS(it.id)) })
+        is Screen.ChatS -> ChatScreen(vm, top.convo, onBack = { vm.stack.removeAt(vm.stack.lastIndex) })
         Screen.LoginS -> LoginScreen(
             onBack = { vm.stack.removeAt(vm.stack.lastIndex) },
             onDone = { vm.stack.removeAt(vm.stack.lastIndex); vm.refreshAccount() },
@@ -95,17 +105,22 @@ private fun Root(vm: AppVm, theme: Int, dynamic: Boolean, onTheme: (Int) -> Unit
             containerColor = MaterialTheme.colorScheme.background,
             bottomBar = {
                 NavigationBar {
-                    NavigationBarItem(tab == Tab.GAMES, { tab = Tab.GAMES }, { Icon(Icons.Default.Home, null) }, label = { Text(stringResource(R.string.tab_games)) })
-                    NavigationBarItem(tab == Tab.PEOPLE, { tab = Tab.PEOPLE }, { Icon(Icons.Default.Person, null) }, label = { Text(stringResource(R.string.tab_people)) })
-                    NavigationBarItem(tab == Tab.SETTINGS, { tab = Tab.SETTINGS }, { Icon(Icons.Default.Settings, null) }, label = { Text(stringResource(R.string.tab_settings)) })
+                    NavigationBarItem(tab == Tab.HOME, { tab = Tab.HOME }, { Icon(Icons.Default.Home, null) }, label = { Text(stringResource(R.string.tab_home)) })
+                    NavigationBarItem(tab == Tab.SEARCH, { tab = Tab.SEARCH }, { Icon(Icons.Default.Search, null) }, label = { Text(stringResource(R.string.tab_search)) })
+                    NavigationBarItem(tab == Tab.FRIENDS, { tab = Tab.FRIENDS }, { Icon(Icons.Default.Person, null) }, label = { Text(stringResource(R.string.tab_friends)) })
+                    NavigationBarItem(tab == Tab.CHAT, { tab = Tab.CHAT }, { Icon(Icons.Default.Email, null) }, label = { Text(stringResource(R.string.tab_chat)) })
+                    NavigationBarItem(tab == Tab.MORE, { tab = Tab.MORE }, { Icon(Icons.Default.Settings, null) }, label = { Text(stringResource(R.string.tab_settings)) })
                 }
             },
         ) { pad ->
             val m = Modifier.padding(pad)
+            val login = { vm.stack.add(Screen.LoginS); Unit }
             when (tab) {
-                Tab.GAMES -> GamesTab(vm, m) { vm.stack.add(Screen.GameS(it)) }
-                Tab.PEOPLE -> PeopleTab(vm, m) { vm.stack.add(Screen.UserS(it.id)) }
-                Tab.SETTINGS -> SettingsTab(
+                Tab.HOME -> HomeTab(vm, m, { vm.stack.add(Screen.GameS(it)) }, { vm.stack.add(Screen.UserS(it)) }, login)
+                Tab.SEARCH -> SearchTab(vm, m, { vm.stack.add(Screen.GameS(it)) }, { vm.stack.add(Screen.UserS(it.id)) })
+                Tab.FRIENDS -> FriendsTab(vm, m, { vm.stack.add(Screen.UserS(it)) }, login)
+                Tab.CHAT -> ChatTab(vm, m, { vm.stack.add(Screen.ChatS(it)) }, login)
+                Tab.MORE -> SettingsTab(
                     theme, dynamic, onTheme, onDynamic, m,
                     account = vm.account,
                     onLogin = { vm.stack.add(Screen.LoginS) },
