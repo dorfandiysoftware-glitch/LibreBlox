@@ -40,4 +40,9 @@
     <string name="dynamic_colors_desc">Use the colors of your wallpaper (Android 12+)</string>
     <string name="about">About</string>
     <string name="about_text">LibreBlox is a free, open-source viewer for Roblox: browse experiences and people without logging in. It cannot run games: Play opens the official Roblox app. Not affiliated with Roblox Corporation. Data comes from public Roblox web endpoints that may change at any time.</string>
+    <string name="account">Account</string>
+    <string name="login">Log in</string>
+    <string name="logout">Log out</string>
+    <string name="my_profile">My profile</string>
+    <string name="login_note">Log in on the official Roblox page. LibreBlox never sees your password; only the session is kept, encrypted on this device.</string>
 </resources>

@@ -87,6 +87,10 @@ private fun Root(vm: AppVm, theme: Int, dynamic: Boolean, onTheme: (Int) -> Unit
         is Screen.GameS -> GameScreen(top.game, onBack = { vm.stack.removeAt(vm.stack.lastIndex) }, onUser = { vm.stack.add(Screen.UserS(it)) })
         is Screen.UserS -> UserScreen(top.id, onBack = { vm.stack.removeAt(vm.stack.lastIndex) },
             onGame = { vm.stack.add(Screen.GameS(it)) }, onUser = { vm.stack.add(Screen.UserS(it.id)) })
+        Screen.LoginS -> LoginScreen(
+            onBack = { vm.stack.removeAt(vm.stack.lastIndex) },
+            onDone = { vm.stack.removeAt(vm.stack.lastIndex); vm.refreshAccount() },
+        )
         null -> Scaffold(
             containerColor = MaterialTheme.colorScheme.background,
             bottomBar = {
@@ -101,7 +105,13 @@ private fun Root(vm: AppVm, theme: Int, dynamic: Boolean, onTheme: (Int) -> Unit
             when (tab) {
                 Tab.GAMES -> GamesTab(vm, m) { vm.stack.add(Screen.GameS(it)) }
                 Tab.PEOPLE -> PeopleTab(vm, m) { vm.stack.add(Screen.UserS(it.id)) }
-                Tab.SETTINGS -> SettingsTab(theme, dynamic, onTheme, onDynamic, m)
+                Tab.SETTINGS -> SettingsTab(
+                    theme, dynamic, onTheme, onDynamic, m,
+                    account = vm.account,
+                    onLogin = { vm.stack.add(Screen.LoginS) },
+                    onProfile = { vm.account?.let { vm.stack.add(Screen.UserS(it.id)) } },
+                    onLogout = vm::logout,
+                )
             }
         }
     }

@@ -222,9 +222,34 @@ fun PeopleTab(vm: AppVm, modifier: Modifier, onUser: (User) -> Unit) {
 }
 
 @Composable
-fun SettingsTab(theme: Int, dynamic: Boolean, onTheme: (Int) -> Unit, onDynamic: (Boolean) -> Unit, modifier: Modifier) {
+fun SettingsTab(
+    theme: Int, dynamic: Boolean, onTheme: (Int) -> Unit, onDynamic: (Boolean) -> Unit, modifier: Modifier,
+    account: User?, onLogin: () -> Unit, onProfile: () -> Unit, onLogout: () -> Unit,
+) {
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         Text(stringResource(R.string.tab_settings), style = MaterialTheme.typography.headlineMedium)
+        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(20.dp)) {
+            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(stringResource(R.string.account), style = MaterialTheme.typography.titleMedium)
+                if (account == null) {
+                    Text(stringResource(R.string.login_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Button(onLogin) { Text(stringResource(R.string.login)) }
+                } else {
+                    Row(Modifier.fillMaxWidth().clickable(onClick = onProfile), verticalAlignment = Alignment.CenterVertically) {
+                        AsyncImage(account.avatar, null, Modifier.size(52.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+                        Spacer(Modifier.width(14.dp))
+                        Column {
+                            Text(account.display, style = MaterialTheme.typography.titleMedium)
+                            Text("@${account.name}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilledTonalButton(onProfile) { Text(stringResource(R.string.my_profile)) }
+                        TextButton(onLogout) { Text(stringResource(R.string.logout)) }
+                    }
+                }
+            }
+        }
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(20.dp)) {
             Column(Modifier.padding(vertical = 8.dp)) {
                 Text(stringResource(R.string.theme), Modifier.padding(16.dp, 8.dp), style = MaterialTheme.typography.titleMedium)
@@ -377,5 +402,43 @@ fun UserScreen(id: Long, onBack: () -> Unit, onGame: (Game) -> Unit, onUser: (Us
                 }
             }
         }
+    }
+}
+
+// ---------------- login ----------------
+
+@android.annotation.SuppressLint("SetJavaScriptEnabled")
+@Composable
+fun LoginScreen(onBack: () -> Unit, onDone: () -> Unit) {
+    val ctx = LocalContext.current
+    var done by remember { mutableStateOf(false) }
+    DetailScaffold(stringResource(R.string.login), onBack) { m ->
+        androidx.compose.ui.viewinterop.AndroidView(
+            modifier = m.fillMaxSize(),
+            factory = { c ->
+                android.webkit.WebView(c).apply {
+                    settings.javaScriptEnabled = true
+                    settings.domStorageEnabled = true
+                    val cm = android.webkit.CookieManager.getInstance()
+                    cm.setAcceptCookie(true)
+                    cm.setAcceptThirdPartyCookies(this, true)
+                    webViewClient = object : android.webkit.WebViewClient() {
+                        override fun onPageFinished(view: android.webkit.WebView, url: String?) {
+                            if (done) return
+                            val cookies = cm.getCookie("https://www.roblox.com").orEmpty()
+                            val v = cookies.split(";").map { it.trim() }
+                                .firstOrNull { it.startsWith(".ROBLOSECURITY=") }?.removePrefix(".ROBLOSECURITY=")
+                            if (!v.isNullOrEmpty()) {
+                                done = true
+                                Session.save(ctx, v)
+                                onDone()
+                            }
+                        }
+                    }
+                    loadUrl("https://www.roblox.com/login")
+                }
+            },
+            onRelease = { it.destroy() },
+        )
     }
 }

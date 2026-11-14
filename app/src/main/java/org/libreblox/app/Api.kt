@@ -56,13 +56,14 @@ data class UserDetails(
 object Api {
     private val session = UUID.randomUUID().toString()
 
-    private suspend fun get(url: String): JSONObject = withContext(Dispatchers.IO) {
+    private suspend fun get(url: String, cookie: String? = null): JSONObject = withContext(Dispatchers.IO) {
         val c = URL(url).openConnection() as HttpURLConnection
         try {
             c.connectTimeout = 15000
             c.readTimeout = 20000
             c.setRequestProperty("Accept", "application/json")
             c.setRequestProperty("User-Agent", "LibreBlox/0.1 (Android)")
+            if (cookie != null) c.setRequestProperty("Cookie", ".ROBLOSECURITY=$cookie")
             val code = c.responseCode
             if (code !in 200..299) throw ApiException(code, url)
             JSONObject(c.inputStream.bufferedReader().use { it.readText() })
@@ -74,6 +75,15 @@ object Api {
     private fun enc(s: String) = URLEncoder.encode(s, "UTF-8")
     private fun JSONArray?.objects(): List<JSONObject> =
         if (this == null) emptyList() else (0 until length()).mapNotNull { optJSONObject(it) }
+
+    /** The account the session cookie belongs to, or null when it is no longer valid. */
+    suspend fun me(cookie: String): User? = try {
+        val j = get("https://users.roblox.com/v1/users/authenticated", cookie)
+        val id = j.optLong("id")
+        if (id == 0L) null else User(id, j.optString("name"), j.optString("displayName").ifEmpty { j.optString("name") }, avatar = headshots(listOf(id))[id])
+    } catch (e: ApiException) {
+        if (e.code == 401 || e.code == 403) null else throw e
+    }
 
     // ---------------- thumbnails ----------------
 

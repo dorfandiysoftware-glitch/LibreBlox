@@ -40,4 +40,9 @@
     <string name="dynamic_colors_desc">Кольори з шпалер (Android 12+)</string>
     <string name="about">Про застосунок</string>
     <string name="about_text">LibreBlox — вільний переглядач Roblox із відкритим кодом: ігри та люди без входу в акаунт. Він не запускає ігри: кнопка «Грати» відкриває офіційний застосунок Roblox. Не пов’язаний із Roblox Corporation. Дані беруться з публічних веб-адрес Roblox, які можуть змінитися будь-коли.</string>
+    <string name="account">Акаунт</string>
+    <string name="login">Увійти</string>
+    <string name="logout">Вийти</string>
+    <string name="my_profile">Мій профіль</string>
+    <string name="login_note">Вхід відбувається на офіційній сторінці Roblox. LibreBlox не бачить ваш пароль; зберігається лише сесія, зашифрована на цьому пристрої.</string>
 </resources>

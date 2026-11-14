@@ -4,7 +4,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
 
@@ -18,9 +19,10 @@ sealed interface Load<out T> {
 sealed interface Screen {
     data class GameS(val game: Game) : Screen
     data class UserS(val id: Long) : Screen
+    data object LoginS : Screen
 }
 
-class AppVm : ViewModel() {
+class AppVm(private val app: Application) : AndroidViewModel(app) {
     val stack = mutableStateListOf<Screen>()
 
     var sorts by mutableStateOf<List<Sort>>(emptyList())
@@ -33,7 +35,33 @@ class AppVm : ViewModel() {
     var userQuery by mutableStateOf("")
     var userSearch by mutableStateOf<Load<List<User>>>(Load.Idle)
 
-    init { loadHome() }
+    var account by mutableStateOf<User?>(null)
+
+    init {
+        loadHome()
+        refreshAccount()
+    }
+
+    fun refreshAccount() {
+        val cookie = Session.load(app) ?: run { account = null; return }
+        viewModelScope.launch {
+            // Keep the previous value on network errors; only a rejected cookie logs the user out.
+            try {
+                val me = Api.me(cookie)
+                if (me == null) Session.clear(app)
+                account = me
+            } catch (_: Exception) {}
+        }
+    }
+
+    fun logout() {
+        Session.clear(app)
+        account = null
+        try {
+            android.webkit.CookieManager.getInstance().removeAllCookies(null)
+            android.webkit.CookieManager.getInstance().flush()
+        } catch (_: Exception) {}
+    }
 
     private fun err(e: Throwable) = Load.Err(e.message ?: e.toString())
 
