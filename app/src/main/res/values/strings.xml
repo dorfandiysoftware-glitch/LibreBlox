@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LibreBlox</string>
+    <string name="tab_games">Games</string>
+    <string name="tab_people">People</string>
+    <string name="tab_settings">Settings</string>
+    <string name="search_games">Search games</string>
+    <string name="search_people">Search people</string>
+    <string name="search_clear">Clear</string>
+    <string name="retry">Retry</string>
+    <string name="error_generic">Could not load data. Roblox may have changed its web interface, or the network is unavailable.\n\n%1$s</string>
+    <string name="no_results">Nothing found</string>
+    <string name="people_hint">Type a username and press search</string>
+    <string name="playing_fmt">%1$s playing</string>
+    <string name="likes_fmt">%1$d%% liked</string>
+    <string name="play">Play in Roblox</string>
+    <string name="open_web">Open on roblox.com</string>
+    <string name="back">Back</string>
+    <string name="description">Description</string>
+    <string name="by_fmt">By %1$s</string>
+    <string name="stat_playing">Playing</string>
+    <string name="stat_visits">Visits</string>
+    <string name="stat_favorites">Favorites</string>
+    <string name="stat_max_players">Max players</string>
+    <string name="stat_genre">Genre</string>
+    <string name="screenshots">Screenshots</string>
+    <string name="friends">Friends</string>
+    <string name="followers">Followers</string>
+    <string name="following">Following</string>
+    <string name="joined_fmt">Joined %1$s</string>
+    <string name="banned">This account is banned</string>
+    <string name="user_games">Experiences</string>
+    <string name="friends_list">Friends</string>
+    <string name="theme">Theme</string>
+    <string name="theme_system">System</string>
+    <string name="theme_light">Light</string>
+    <string name="theme_dark">Dark</string>
+    <string name="theme_amoled">AMOLED</string>
+    <string name="dynamic_colors">Dynamic colors</string>
+    <string name="dynamic_colors_desc">Use the colors of your wallpaper (Android 12+)</string>
+    <string name="about">About</string>
+    <string name="about_text">LibreBlox is a free, open-source viewer for Roblox: browse experiences and people without logging in. It cannot run games: Play opens the official Roblox app. Not affiliated with Roblox Corporation. Data comes from public Roblox web endpoints that may change at any time.</string>
+</resources>

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LibreBlox</string>
+    <string name="tab_games">Ігри</string>
+    <string name="tab_people">Люди</string>
+    <string name="tab_settings">Налаштування</string>
+    <string name="search_games">Пошук ігор</string>
+    <string name="search_people">Пошук людей</string>
+    <string name="search_clear">Очистити</string>
+    <string name="retry">Повторити</string>
+    <string name="error_generic">Не вдалося завантажити дані. Можливо, Roblox змінив свій веб-інтерфейс або немає мережі.\n\n%1$s</string>
+    <string name="no_results">Нічого не знайдено</string>
+    <string name="people_hint">Введіть нікнейм і натисніть пошук</string>
+    <string name="playing_fmt">%1$s грає</string>
+    <string name="likes_fmt">%1$d%% вподобань</string>
+    <string name="play">Грати в Roblox</string>
+    <string name="open_web">Відкрити на roblox.com</string>
+    <string name="back">Назад</string>
+    <string name="description">Опис</string>
+    <string name="by_fmt">Автор: %1$s</string>
+    <string name="stat_playing">Грають</string>
+    <string name="stat_visits">Візити</string>
+    <string name="stat_favorites">В обраному</string>
+    <string name="stat_max_players">Макс. гравців</string>
+    <string name="stat_genre">Жанр</string>
+    <string name="screenshots">Скриншоти</string>
+    <string name="friends">Друзі</string>
+    <string name="followers">Підписники</string>
+    <string name="following">Підписки</string>
+    <string name="joined_fmt">Дата реєстрації: %1$s</string>
+    <string name="banned">Акаунт заблокований</string>
+    <string name="user_games">Ігри автора</string>
+    <string name="friends_list">Друзі</string>
+    <string name="theme">Тема</string>
+    <string name="theme_system">Системна</string>
+    <string name="theme_light">Світла</string>
+    <string name="theme_dark">Темна</string>
+    <string name="theme_amoled">AMOLED</string>
+    <string name="dynamic_colors">Динамічні кольори</string>
+    <string name="dynamic_colors_desc">Кольори з шпалер (Android 12+)</string>
+    <string name="about">Про застосунок</string>
+    <string name="about_text">LibreBlox — вільний переглядач Roblox із відкритим кодом: ігри та люди без входу в акаунт. Він не запускає ігри: кнопка «Грати» відкриває офіційний застосунок Roblox. Не пов’язаний із Roblox Corporation. Дані беруться з публічних веб-адрес Roblox, які можуть змінитися будь-коли.</string>
+</resources>
