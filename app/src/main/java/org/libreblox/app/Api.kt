@@ -322,7 +322,7 @@ object Api {
     }
 
     suspend fun messages(conversationId: String, cookie: String): List<Msg> {
-        val j = get("$CHAT/get-conversation-messages?conversation_id=${enc(conversationId)}&pageSize=40", cookie)
+        val j = get("$CHAT/get-conversation-messages?conversation_id=${enc(conversationId)}", cookie)
         return j.optJSONArray("messages").objects().map {
             Msg(it.optString("id"), it.optLong("sender_user_id"), it.optString("content"), it.optString("created_at"))
         }.sortedBy { it.sent }
