@@ -196,77 +196,6 @@ fun UserRow(u: User, onClick: () -> Unit) {
     }
 }
 
-@Composable
-fun SettingsTab(
-    theme: Int, dynamic: Boolean, onTheme: (Int) -> Unit, onDynamic: (Boolean) -> Unit, modifier: Modifier,
-    account: User?, onLogin: () -> Unit, onProfile: () -> Unit, onLogout: () -> Unit,
-) {
-    Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-        Text(stringResource(R.string.tab_settings), style = MaterialTheme.typography.headlineMedium)
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(20.dp)) {
-            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(stringResource(R.string.account), style = MaterialTheme.typography.titleMedium)
-                if (account == null) {
-                    Text(stringResource(R.string.login_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Button(onLogin) { Text(stringResource(R.string.login)) }
-                } else {
-                    Row(Modifier.fillMaxWidth().clickable(onClick = onProfile), verticalAlignment = Alignment.CenterVertically) {
-                        AsyncImage(account.avatar, null, Modifier.size(52.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-                        Spacer(Modifier.width(14.dp))
-                        Column {
-                            Text(account.display, style = MaterialTheme.typography.titleMedium)
-                            Text("@${account.name}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        FilledTonalButton(onProfile) { Text(stringResource(R.string.my_profile)) }
-                        TextButton(onLogout) { Text(stringResource(R.string.logout)) }
-                    }
-                }
-            }
-        }
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(20.dp)) {
-            Column(Modifier.padding(vertical = 8.dp)) {
-                Text(stringResource(R.string.theme), Modifier.padding(16.dp, 8.dp), style = MaterialTheme.typography.titleMedium)
-                listOf(R.string.theme_roblox, R.string.theme_system, R.string.theme_light, R.string.theme_dark, R.string.theme_amoled).forEachIndexed { i, r ->
-                    Row(Modifier.fillMaxWidth().clickable { onTheme(i) }.padding(horizontal = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        RadioButton(theme == i, { onTheme(i) })
-                        Text(stringResource(r))
-                    }
-                }
-            }
-        }
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(20.dp)) {
-            Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text(stringResource(R.string.dynamic_colors), style = MaterialTheme.typography.titleMedium)
-                    Text(stringResource(R.string.dynamic_colors_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                Switch(dynamic, onDynamic)
-            }
-        }
-        val ctx = LocalContext.current
-        if (dorfikstrapInstalled(ctx)) {
-            var via by remember { mutableStateOf(ctx.getSharedPreferences("lb", Context.MODE_PRIVATE).getBoolean("via_dorfikstrap", true)) }
-            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(20.dp)) {
-                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Column(Modifier.weight(1f)) {
-                        Text(stringResource(R.string.via_dorfikstrap), style = MaterialTheme.typography.titleMedium)
-                        Text(stringResource(R.string.via_dorfikstrap_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(via, { via = it; ctx.getSharedPreferences("lb", Context.MODE_PRIVATE).edit().putBoolean("via_dorfikstrap", it).apply() })
-                }
-            }
-        }
-        Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(20.dp)) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(stringResource(R.string.about), style = MaterialTheme.typography.titleMedium)
-                Text(stringResource(R.string.about_text), style = MaterialTheme.typography.bodyMedium)
-            }
-        }
-    }
-}
-
 // ---------------- detail screens ----------------
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -311,7 +240,8 @@ fun GameScreen(base: Game, onBack: () -> Unit, onUser: (Long) -> Unit) {
                             likePercent(d.game)?.let { Text(stringResource(R.string.likes_fmt, it), style = MaterialTheme.typography.bodyMedium) }
                         }
                     }
-                    Button({ openPlay(ctx, d.game.placeId) }, Modifier.fillMaxWidth().height(52.dp),
+                    val cfg = LocalCfg.current
+                    Button({ cfg.recordPlayed(d.game); openPlay(ctx, d.game.placeId) }, Modifier.fillMaxWidth().height(52.dp),
                         colors = androidx.compose.material3.ButtonDefaults.buttonColors(containerColor = RobloxGreen, contentColor = androidx.compose.ui.graphics.Color.White)) {
                         Icon(Icons.Default.PlayArrow, null)
                         Spacer(Modifier.width(8.dp))
@@ -424,7 +354,8 @@ fun LoginScreen(onBack: () -> Unit, onDone: () -> Unit) {
                             }
                         }
                     }
-                    loadUrl("https://www.roblox.com/login")
+                    // Start from a logged-out page so another account can be added.
+                    cm.removeAllCookies { loadUrl("https://www.roblox.com/login") }
                 }
             },
             onRelease = { it.destroy() },

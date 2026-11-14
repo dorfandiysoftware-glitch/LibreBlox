@@ -174,16 +174,16 @@ object Api {
 
     // ---------------- discover ----------------
 
-    suspend fun sorts(): List<Sort> {
-        val j = get("https://apis.roblox.com/explore-api/v1/get-sorts?sessionId=$session&device=phone&country=all")
+    suspend fun sorts(cookie: String? = null): List<Sort> {
+        val j = get("https://apis.roblox.com/explore-api/v1/get-sorts?sessionId=$session&device=phone&country=all", cookie)
         val list = j.optJSONArray("sorts").objects()
             .filter { it.optString("contentType", "Games").equals("Games", true) && it.optString("sortId").isNotEmpty() }
             .map { Sort(it.optString("sortId"), it.optString("sortDisplayName").ifEmpty { it.optString("sortId") }) }
         return list
     }
 
-    suspend fun sortGames(sortId: String): List<Game> {
-        val j = get("https://apis.roblox.com/explore-api/v1/get-sort-content?sessionId=$session&device=phone&country=all&sortId=${enc(sortId)}")
+    suspend fun sortGames(sortId: String, cookie: String? = null): List<Game> {
+        val j = get("https://apis.roblox.com/explore-api/v1/get-sort-content?sessionId=$session&device=phone&country=all&sortId=${enc(sortId)}", cookie)
         return j.optJSONArray("games").objects().map(::gameFrom).filter { it.universeId != 0L }.withIcons()
     }
 
@@ -303,9 +303,20 @@ object Api {
 
     private const val CHAT = "https://apis.roblox.com/platform-chat-api/v1"
 
+    private fun idOf(o: JSONObject): String {
+        for (k in listOf("id", "conversation_id", "conversationId")) {
+            val v = o.opt(k)
+            if (v != null && v != JSONObject.NULL && v.toString().isNotEmpty()) return v.toString()
+        }
+        return ""
+    }
+
     suspend fun conversations(myId: Long, cookie: String): List<Convo> {
         val j = get("$CHAT/get-user-conversations?include_user_data=true&pageSize=30", cookie)
-        val arr = (j.optJSONArray("conversations") ?: JSONArray()).objects()
+        val raw = (j.optJSONArray("conversations") ?: JSONArray()).objects()
+        // Some responses wrap each entry as {"conversation": {...}}.
+        val arr = raw.map { it.optJSONObject("conversation") ?: it }
+        arr.firstOrNull { idOf(it).isEmpty() }?.let { throw Exception("Unexpected chat format, keys: " + it.keys().asSequence().toList()) }
         fun others(c: JSONObject): List<Long> {
             val a = c.optJSONArray("participant_user_ids") ?: return emptyList()
             return (0 until a.length()).map { a.optLong(it) }.filter { it != myId && it != 0L }
@@ -317,7 +328,7 @@ object Api {
             val o = others(c)
             val title = c.optString("name").takeIf { it.isNotEmpty() && it != "null" }
                 ?: o.mapNotNull { users[it]?.display }.joinToString(", ").ifEmpty { "Chat" }
-            Convo(c.optString("id"), title, c.optInt("unread_message_count") > 0, o.firstOrNull()?.let { avatars[it] })
+            Convo(idOf(c), title, c.optInt("unread_message_count") > 0, o.firstOrNull()?.let { avatars[it] })
         }
     }
 
@@ -332,5 +343,30 @@ object Api {
         val body = JSONObject().put("conversation_id", conversationId)
             .put("messages", JSONArray().put(JSONObject().put("content", text))).toString()
         request("$CHAT/send-messages", "POST", cookie, body)
+    }
+
+    // ---------------- balance, friend requests ----------------
+
+    suspend fun robux(userId: Long, cookie: String): Long =
+        get("https://economy.roblox.com/v1/users/$userId/currency", cookie).optLong("robux")
+
+    suspend fun incomingRequests(cookie: String): List<User> {
+        val j = get("https://friends.roblox.com/v1/my/friends/requests?limit=50&sortOrder=Desc", cookie)
+        val ids = (j.optJSONArray("data") ?: JSONArray()).objects().map { it.optLong("id") }.filter { it != 0L }
+        return usersByIds(ids).withAvatars()
+    }
+
+    suspend fun friendAction(userId: Long, action: String, cookie: String) {
+        // action: request-friendship | accept-friend-request | decline-friend-request
+        request("https://friends.roblox.com/v1/users/$userId/$action", "POST", cookie, "{}")
+    }
+
+    suspend fun newConversation(userId: Long, cookie: String): String {
+        val body = JSONObject().put("conversations", JSONArray().put(
+            JSONObject().put("type", "one_to_one").put("participant_user_ids", JSONArray().put(userId)),
+        )).put("include_user_data", true).toString()
+        val j = JSONObject(request("$CHAT/create-conversations", "POST", cookie, body))
+        val c = (j.optJSONArray("conversations") ?: JSONArray()).objects().firstOrNull() ?: throw Exception("No conversation returned")
+        return idOf(c.optJSONObject("conversation") ?: c).ifEmpty { throw Exception("No conversation id: " + c.keys().asSequence().toList()) }
     }
 }

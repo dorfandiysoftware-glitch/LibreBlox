@@ -1,6 +1,5 @@
 package org.libreblox.app
 
-import android.content.Context
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -8,36 +7,75 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.ShoppingCart
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalDrawerSheet
+import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedback
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
+import kotlinx.coroutines.launch
 
 class MainActivity : ComponentActivity() {
     private val vm by viewModels<AppVm>()
@@ -45,17 +83,15 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val prefs = getSharedPreferences("lb", Context.MODE_PRIVATE)
+        val cfg = Cfg(this)
         setContent {
-            var theme by remember { mutableIntStateOf(prefs.getInt("theme_v3", 0)) }
-            var dynamic by remember { mutableStateOf(prefs.getBoolean("dynamic_v3", false)) }
-            LibreTheme(theme, dynamic) {
-                Surface(color = MaterialTheme.colorScheme.background) {
-                    Root(
-                        vm, theme, dynamic,
-                        onTheme = { theme = it; prefs.edit().putInt("theme_v3", it).apply() },
-                        onDynamic = { dynamic = it; prefs.edit().putBoolean("dynamic_v3", it).apply() },
-                    )
+            val d = LocalDensity.current
+            CompositionLocalProvider(
+                LocalCfg provides cfg,
+                LocalDensity provides Density(d.density, d.fontScale * cfg.textScale),
+            ) {
+                LibreTheme(cfg.theme()) {
+                    Surface(color = MaterialTheme.colorScheme.background) { Root(vm, cfg) }
                 }
             }
         }
@@ -63,71 +99,180 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun LibreTheme(theme: Int, dynamic: Boolean, content: @Composable () -> Unit) {
-    // theme: 0 Roblox, 1 system, 2 light, 3 dark, 4 AMOLED
-    val dark = when (theme) { 0, 3, 4 -> true; 2 -> false; else -> isSystemInDarkTheme() }
+fun LibreTheme(spec: ThemeSpec, content: @Composable () -> Unit) {
     val ctx = LocalContext.current
-    var scheme = when {
-        theme == 0 -> darkColorScheme(
-            primary = Color(0xFF335FFF), onPrimary = Color.White, secondary = Color(0xFF00B06F),
-            background = Color(0xFF232527), onBackground = Color.White, surface = Color(0xFF232527), onSurface = Color.White,
-            onSurfaceVariant = Color(0xFFBDBEBE),
-            surfaceContainer = Color(0xFF2E3033), surfaceContainerHigh = Color(0xFF393B3D), surfaceContainerHighest = Color(0xFF45474A),
-        )
-        dynamic && Build.VERSION.SDK_INT >= 31 -> if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
-        dark -> darkColorScheme(primary = Color(0xFF66BB6A), secondary = Color(0xFF81C784))
-        else -> lightColorScheme(primary = Color(0xFF2E7D32), secondary = Color(0xFF388E3C))
+    val dark = if (spec.id == "system") isSystemInDarkTheme() else spec.dark
+    val base = when {
+        spec.id == "system" && Build.VERSION.SDK_INT >= 31 -> if (dark) dynamicDarkColorScheme(ctx) else dynamicLightColorScheme(ctx)
+        dark -> darkColorScheme()
+        else -> lightColorScheme()
     }
-    if (theme == 4) scheme = scheme.copy(
-        background = Color.Black, surface = Color.Black,
-        surfaceContainer = Color(0xFF0E0E0E), surfaceContainerHigh = Color(0xFF161616), surfaceContainerHighest = Color(0xFF1E1E1E),
+    fun c(k: String, d: Color) = spec.colors[k]?.let { Color(it) } ?: d
+    val scheme = base.copy(
+        primary = c("primary", base.primary), onPrimary = c("onPrimary", base.onPrimary),
+        secondary = c("secondary", base.secondary),
+        background = c("background", base.background), onBackground = c("onBackground", base.onBackground),
+        surface = c("surface", base.surface), onSurface = c("onSurface", base.onSurface),
+        onSurfaceVariant = c("onSurfaceVariant", base.onSurfaceVariant), error = c("error", base.error),
+        surfaceContainer = c("surfaceContainer", base.surfaceContainer),
+        surfaceContainerHigh = c("surfaceContainerHigh", base.surfaceContainerHigh),
+        surfaceContainerHighest = c("surfaceContainerHighest", base.surfaceContainerHighest),
     )
     MaterialTheme(colorScheme = scheme, content = content)
 }
 
-private enum class Tab { HOME, SEARCH, FRIENDS, CHAT, MORE }
-
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun Root(vm: AppVm, theme: Int, dynamic: Boolean, onTheme: (Int) -> Unit, onDynamic: (Boolean) -> Unit) {
-    var tab by rememberSaveable { mutableStateOf(Tab.HOME) }
+private fun Root(vm: AppVm, cfg: Cfg) {
+    val ctx = LocalContext.current
+    val haptic = LocalHapticFeedback.current
+    val tap = rememberTap(haptic, cfg)
+    var tab by rememberSaveable { mutableStateOf("home") }
+    var homeTab by rememberSaveable { mutableStateOf(0) }
+    var chatFilter by rememberSaveable { mutableStateOf("") }
+    var showSwitch by remember { mutableStateOf(false) }
+    val drawer = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
     val top = vm.stack.lastOrNull()
-    BackHandler(top != null) { vm.stack.removeAt(vm.stack.lastIndex) }
+    val pop = { vm.stack.removeAt(vm.stack.lastIndex); Unit }
+    val push = { s: Screen -> vm.stack.add(s); Unit }
+    val login = { push(Screen.LoginS) }
+    BackHandler(top != null) { pop() }
+    BackHandler(top == null && drawer.isOpen) { scope.launch { drawer.close() } }
+
     when (top) {
-        is Screen.GameS -> GameScreen(top.game, onBack = { vm.stack.removeAt(vm.stack.lastIndex) }, onUser = { vm.stack.add(Screen.UserS(it)) })
-        is Screen.UserS -> UserScreen(top.id, onBack = { vm.stack.removeAt(vm.stack.lastIndex) },
-            onGame = { vm.stack.add(Screen.GameS(it)) }, onUser = { vm.stack.add(Screen.UserS(it.id)) })
-        is Screen.ChatS -> ChatScreen(vm, top.convo, onBack = { vm.stack.removeAt(vm.stack.lastIndex) })
-        Screen.LoginS -> LoginScreen(
-            onBack = { vm.stack.removeAt(vm.stack.lastIndex) },
-            onDone = { vm.stack.removeAt(vm.stack.lastIndex); vm.refreshAccount() },
-        )
-        null -> Scaffold(
-            containerColor = MaterialTheme.colorScheme.background,
-            bottomBar = {
-                NavigationBar {
-                    NavigationBarItem(tab == Tab.HOME, { tab = Tab.HOME }, { Icon(Icons.Default.Home, null) }, label = { Text(stringResource(R.string.tab_home)) })
-                    NavigationBarItem(tab == Tab.SEARCH, { tab = Tab.SEARCH }, { Icon(Icons.Default.Search, null) }, label = { Text(stringResource(R.string.tab_search)) })
-                    NavigationBarItem(tab == Tab.FRIENDS, { tab = Tab.FRIENDS }, { Icon(Icons.Default.Person, null) }, label = { Text(stringResource(R.string.tab_friends)) })
-                    NavigationBarItem(tab == Tab.CHAT, { tab = Tab.CHAT }, { Icon(Icons.Default.Email, null) }, label = { Text(stringResource(R.string.tab_chat)) })
-                    NavigationBarItem(tab == Tab.MORE, { tab = Tab.MORE }, { Icon(Icons.Default.Settings, null) }, label = { Text(stringResource(R.string.tab_settings)) })
+        is Screen.GameS -> GameScreen(top.game, pop, onUser = { push(Screen.UserS(it)) })
+        is Screen.UserS -> UserScreen(top.id, pop, onGame = { push(Screen.GameS(it)) }, onUser = { push(Screen.UserS(it.id)) })
+        is Screen.ChatS -> ChatScreen(vm, top.convo, pop)
+        Screen.LoginS -> LoginScreen(pop, onDone = { pop(); vm.refreshAccount() })
+        Screen.SearchS -> SearchScreen(vm, pop, { push(Screen.GameS(it)) }, { push(Screen.UserS(it.id)) })
+        Screen.SettingsS -> SettingsScreen(vm, pop) { push(Screen.DocsS) }
+        Screen.DocsS -> DocsScreen(pop)
+        Screen.ContinueS -> ContinueScreen(pop) { push(Screen.GameS(it)) }
+        Screen.FriendsS -> FriendsScreen(vm, pop, { push(Screen.UserS(it)) }, { login() })
+        Screen.AddFriendsS -> AddFriendsScreen(vm, pop) { push(Screen.UserS(it)) }
+        Screen.NewChatS -> NewChatScreen(vm, pop)
+        null -> {
+            fun go(id: String) {
+                tap()
+                scope.launch { drawer.close() }
+                when (id) {
+                    "continue" -> push(Screen.ContinueS)
+                    "friends" -> push(Screen.FriendsS)
+                    "settings" -> push(Screen.SettingsS)
+                    "messages" -> tab = "chat"
+                    "switch" -> showSwitch = true
+                    "logout" -> vm.logout()
+                    "favorites" -> openWeb(ctx, "https://www.roblox.com/discover/#/sortName/v2/Favorites")
+                    "communities" -> openWeb(ctx, "https://www.roblox.com/communities")
+                    "inventory" -> openWeb(ctx, "https://www.roblox.com/users/${vm.account?.id ?: 0}/inventory")
+                    "trades" -> openWeb(ctx, "https://www.roblox.com/trades")
+                    "help" -> openWeb(ctx, "https://en.help.roblox.com/")
+                    "learn" -> openWeb(ctx, "https://create.roblox.com/docs")
+                    "create" -> openWeb(ctx, "https://create.roblox.com/")
                 }
-            },
-        ) { pad ->
-            val m = Modifier.padding(pad)
-            val login = { vm.stack.add(Screen.LoginS); Unit }
-            when (tab) {
-                Tab.HOME -> HomeTab(vm, m, { vm.stack.add(Screen.GameS(it)) }, { vm.stack.add(Screen.UserS(it)) }, login)
-                Tab.SEARCH -> SearchTab(vm, m, { vm.stack.add(Screen.GameS(it)) }, { vm.stack.add(Screen.UserS(it.id)) })
-                Tab.FRIENDS -> FriendsTab(vm, m, { vm.stack.add(Screen.UserS(it)) }, login)
-                Tab.CHAT -> ChatTab(vm, m, { vm.stack.add(Screen.ChatS(it)) }, login)
-                Tab.MORE -> SettingsTab(
-                    theme, dynamic, onTheme, onDynamic, m,
-                    account = vm.account,
-                    onLogin = { vm.stack.add(Screen.LoginS) },
-                    onProfile = { vm.account?.let { vm.stack.add(Screen.UserS(it.id)) } },
-                    onLogout = vm::logout,
-                )
+            }
+            ModalNavigationDrawer(
+                drawerState = drawer,
+                drawerContent = {
+                    ModalDrawerSheet(drawerContainerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = cfg.drawerAlpha)) {
+                        Column(Modifier.verticalScroll(rememberScrollState())) {
+                            val me = vm.account
+                            Column(Modifier.fillMaxWidth().padding(20.dp, 28.dp, 20.dp, 12.dp)) {
+                                if (me == null) {
+                                    Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge)
+                                    TextButton({ scope.launch { drawer.close() }; login() }) { Text(stringResource(R.string.login)) }
+                                } else {
+                                    AsyncImage(me.avatar, null, Modifier.size(64.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+                                    Spacer(Modifier.height(10.dp))
+                                    Text(me.display, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    Text("@${me.name}", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    vm.balance?.let { Text(stringResource(R.string.robux_fmt, compact(it)), color = RobloxGreen) }
+                                }
+                            }
+                            cfg.drawerOrder.filter { it !in cfg.drawerHidden }.forEach { id ->
+                                if (me == null && id in listOf("switch", "logout", "inventory", "trades")) return@forEach
+                                NavigationDrawerItem(
+                                    label = { Text(stringResource(drawerLabel(id))) }, selected = false, onClick = { go(id) },
+                                    modifier = Modifier.padding(horizontal = 12.dp),
+                                )
+                            }
+                        }
+                    }
+                },
+            ) {
+                Scaffold(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    topBar = {
+                        TopAppBar(
+                            title = {},
+                            navigationIcon = {
+                                if (tab == "home") IconButton({ tap(); scope.launch { drawer.open() } }) { Icon(Icons.Default.Menu, null) }
+                            },
+                            actions = {
+                                when (tab) {
+                                    "chat" -> {
+                                        IconButton({ tap(); push(Screen.SearchS) }) { Icon(Icons.Default.Search, null) }
+                                        IconButton({ tap(); push(Screen.NewChatS) }) { Icon(Icons.Default.Add, null) }
+                                    }
+                                    "home" -> {
+                                        IconButton({ tap(); push(Screen.SearchS) }) { Icon(Icons.Default.Search, null) }
+                                        IconButton({ tap(); openWeb(ctx, "https://www.roblox.com/upgrades/robux") }) { Icon(Icons.Default.ShoppingCart, null) }
+                                        IconButton({ tap(); tab = "chat" }) { Icon(Icons.Default.Email, null) }
+                                    }
+                                }
+                            },
+                            colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+                        )
+                    },
+                    bottomBar = {
+                        NavigationBar {
+                            cfg.navOrder.filter { it !in cfg.navHidden }.forEach { id ->
+                                val icon = when (id) { "home" -> Icons.Default.Home; "chat" -> Icons.Default.Email; else -> Icons.Default.Person }
+                                val label = when (id) { "home" -> R.string.tab_home; "chat" -> R.string.tab_chat; else -> R.string.tab_me }
+                                NavigationBarItem(tab == id, { tap(); tab = id }, { Icon(icon, null) }, label = { Text(stringResource(label)) })
+                            }
+                        }
+                    },
+                ) { pad ->
+                    val m = Modifier.padding(pad)
+                    when (if (tab in cfg.navOrder && tab !in cfg.navHidden) tab else cfg.navOrder.first { it !in cfg.navHidden }) {
+                        "home" -> Column(m) {
+                            TabRow(homeTab) {
+                                Tab(homeTab == 0, { homeTab = 0 }, text = { Text(stringResource(R.string.for_you)) })
+                                Tab(homeTab == 1, { homeTab = 1 }, text = { Text(stringResource(R.string.charts)) })
+                            }
+                            HomeTab(
+                                vm, Modifier, forYou = homeTab == 0,
+                                onGame = { push(Screen.GameS(it)) }, onUser = { push(Screen.UserS(it)) },
+                                onLogin = { login() }, onAddFriends = { push(Screen.AddFriendsS) }, onContinue = { push(Screen.ContinueS) },
+                            )
+                        }
+                        "chat" -> ChatTab(vm, m, chatFilter, { push(Screen.ChatS(it)) }, { login() })
+                        else -> MeTab(vm, m, onLogin = { login() }, onProfile = { vm.account?.let { push(Screen.UserS(it.id)) } })
+                    }
+                }
             }
         }
+    }
+
+    if (showSwitch) {
+        val accs = Session.accounts(ctx)
+        AlertDialog(
+            onDismissRequest = { showSwitch = false },
+            title = { Text(stringResource(R.string.drawer_switch)) },
+            text = {
+                Column {
+                    accs.forEach { a ->
+                        Text(
+                            a.display + "  @" + a.name + if (a.id == Session.activeId(ctx)) "  ✓" else "",
+                            Modifier.fillMaxWidth().clickable { showSwitch = false; vm.switchAccount(a.id) }.padding(vertical = 12.dp),
+                        )
+                    }
+                }
+            },
+            confirmButton = { TextButton({ showSwitch = false; login() }) { Text(stringResource(R.string.add_account)) } },
+            dismissButton = { TextButton({ showSwitch = false }) { Text(stringResource(R.string.cancel)) } },
+        )
     }
 }

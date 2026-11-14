@@ -108,40 +108,60 @@ fun PresenceAvatar(f: Friend, size: Int, onClick: () -> Unit) {
 
 // ---------------- Home ----------------
 
+private val FOR_YOU = Regex("recommend|for you|based|because|friends|revisit|continue|similar", RegexOption.IGNORE_CASE)
+
 @Composable
-fun HomeTab(vm: AppVm, modifier: Modifier, onGame: (Game) -> Unit, onUser: (Long) -> Unit, onLogin: () -> Unit) {
+private fun SortRow(vm: AppVm, sort: Sort, onGame: (Game) -> Unit) {
+    LaunchedEffect(sort.id) { vm.ensureRow(sort.id) }
+    GameRow(sort.title, vm.rowData[sort.id] ?: Load.Busy, { vm.ensureRow(sort.id) }, onGame)
+}
+
+@Composable
+fun HomeTab(
+    vm: AppVm, modifier: Modifier, forYou: Boolean,
+    onGame: (Game) -> Unit, onUser: (Long) -> Unit, onLogin: () -> Unit, onAddFriends: () -> Unit, onContinue: () -> Unit,
+) {
+    val cfg = LocalCfg.current
+    val personal = vm.sorts.filter { FOR_YOU.containsMatchIn(it.title) || FOR_YOU.containsMatchIn(it.id) }.ifEmpty { vm.sorts.take(3) }
+    val sorts = if (forYou) personal else vm.sorts
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
-        item {
-            Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                val me = vm.account
-                if (me != null) {
-                    AsyncImage(me.avatar, null, Modifier.size(44.dp).clip(CircleShape).clickable { onUser(me.id) }, contentScale = ContentScale.Crop)
-                    Spacer(Modifier.width(12.dp))
-                    Text(stringResource(R.string.hello_fmt, me.display), style = MaterialTheme.typography.headlineSmall)
-                } else {
-                    Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium, modifier = Modifier.weight(1f))
+        if (forYou) {
+            if (vm.account == null) item {
+                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.login_required), Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     FilledTonalButton(onLogin) { Text(stringResource(R.string.login)) }
                 }
+            } else item {
+                FilledTonalButton(onAddFriends, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    Text(stringResource(R.string.add_friends))
+                }
             }
-        }
-        val fr = vm.friends
-        if (vm.account != null && fr is Load.Ok && fr.v.isNotEmpty()) item {
-            SectionHeader(stringResource(R.string.friends_count_fmt, fr.v.size))
-            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                items(fr.v) { f ->
-                    Column(Modifier.width(68.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                        PresenceAvatar(f, 64) { onUser(f.user.id) }
-                        Text(f.user.display, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
+            val fr = vm.friends
+            if (vm.account != null && fr is Load.Ok && fr.v.isNotEmpty()) item {
+                SectionHeader(stringResource(R.string.friends_count_fmt, fr.v.size))
+                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                    items(fr.v) { f ->
+                        Column(Modifier.width(68.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            PresenceAvatar(f, 64) { onUser(f.user.id) }
+                            Text(f.user.display, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
+                        }
                     }
+                }
+            }
+            if (cfg.history.isNotEmpty()) item {
+                Text(
+                    stringResource(R.string.continue_title) + "  ›",
+                    Modifier.clickable(onClick = onContinue).padding(horizontal = 16.dp, vertical = 8.dp),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(cfg.history.take(15)) { GameTile(it.asGame()) { onGame(it.asGame()) } }
                 }
             }
         }
         if (vm.homeError != null) item { ErrorBox(vm.homeError ?: "", vm::loadHome) }
         if (vm.homeBusy) item { Box(Modifier.fillMaxWidth().height(200.dp), Alignment.Center) { CircularProgressIndicator() } }
-        items(vm.rows.size, key = { vm.rows[it].id }) { i ->
-            val r = vm.rows[i]
-            GameRow(r.title, r.games, vm::loadHome, onGame)
-        }
+        items(sorts.size) { i -> SortRow(vm, sorts[i], onGame) }
     }
 }
 
@@ -184,7 +204,6 @@ fun FriendsTab(vm: AppVm, modifier: Modifier, onUser: (Long) -> Unit, onLogin: (
     val ctx = LocalContext.current
     if (vm.account == null) { Box(modifier) { NeedLogin(onLogin) }; return }
     Column(modifier.fillMaxSize()) {
-        Text(stringResource(R.string.tab_friends), Modifier.padding(16.dp), style = MaterialTheme.typography.headlineMedium)
         when (val f = vm.friends) {
             Load.Idle, Load.Busy -> Centered { CircularProgressIndicator() }
             is Load.Err -> ErrorBox(f.msg, vm::loadFriends)
@@ -224,16 +243,15 @@ fun openJoin(ctx: android.content.Context, placeId: Long, gameId: String) =
 // ---------------- Chat ----------------
 
 @Composable
-fun ChatTab(vm: AppVm, modifier: Modifier, onChat: (Convo) -> Unit, onLogin: () -> Unit) {
+fun ChatTab(vm: AppVm, modifier: Modifier, filter: String, onChat: (Convo) -> Unit, onLogin: () -> Unit) {
     if (vm.account == null) { Box(modifier) { NeedLogin(onLogin) }; return }
     Column(modifier.fillMaxSize()) {
-        Text(stringResource(R.string.tab_chat), Modifier.padding(16.dp), style = MaterialTheme.typography.headlineMedium)
         when (val c = vm.convos) {
             Load.Idle, Load.Busy -> Centered { CircularProgressIndicator() }
             is Load.Err -> ErrorBox(c.msg, vm::loadConvos)
             is Load.Ok -> if (c.v.isEmpty()) Centered { Text(stringResource(R.string.chat_empty)) }
             else LazyColumn(Modifier.fillMaxSize()) {
-                items(c.v) { cv ->
+                items(c.v.filter { filter.isBlank() || it.title.contains(filter, true) }) { cv ->
                     Row(Modifier.fillMaxWidth().clickable { onChat(cv) }.padding(16.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         AsyncImage(cv.avatar, null, Modifier.size(48.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHigh), contentScale = ContentScale.Crop)
                         Spacer(Modifier.width(14.dp))

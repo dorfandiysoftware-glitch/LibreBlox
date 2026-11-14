@@ -3,6 +3,7 @@ package org.libreblox.app
 import android.app.Application
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.AndroidViewModel
@@ -21,15 +22,21 @@ sealed interface Screen {
     data class UserS(val id: Long) : Screen
     data class ChatS(val convo: Convo) : Screen
     data object LoginS : Screen
+    data object SearchS : Screen
+    data object SettingsS : Screen
+    data object DocsS : Screen
+    data object ContinueS : Screen
+    data object FriendsS : Screen
+    data object AddFriendsS : Screen
+    data object NewChatS : Screen
 }
-
-data class HomeRow(val id: String, val title: String, val games: Load<List<Game>>)
 
 class AppVm(private val app: Application) : AndroidViewModel(app) {
     val stack = mutableStateListOf<Screen>()
 
-    // home
-    var rows by mutableStateOf<List<HomeRow>>(emptyList())
+    // discover
+    var sorts by mutableStateOf<List<Sort>>(emptyList())
+    val rowData = mutableStateMapOf<String, Load<List<Game>>>()
     var homeError by mutableStateOf<String?>(null)
     var homeBusy by mutableStateOf(false)
 
@@ -42,8 +49,10 @@ class AppVm(private val app: Application) : AndroidViewModel(app) {
 
     // account + social
     var account by mutableStateOf<User?>(null)
+    var balance by mutableStateOf<Long?>(null)
     var friends by mutableStateOf<Load<List<Friend>>>(Load.Idle)
     var convos by mutableStateOf<Load<List<Convo>>>(Load.Idle)
+    var requests by mutableStateOf<Load<List<User>>>(Load.Idle)
 
     init {
         loadHome()
@@ -56,22 +65,24 @@ class AppVm(private val app: Application) : AndroidViewModel(app) {
     fun loadHome() {
         homeBusy = true
         homeError = null
+        rowData.clear()
         viewModelScope.launch {
             try {
-                val sorts = runCatching { Api.sorts() }.getOrDefault(emptyList())
-                    .ifEmpty { listOf(Sort("top-playing-now", "Popular")) }.take(6)
-                rows = sorts.map { HomeRow(it.id, it.title, Load.Busy) }
-                homeBusy = false
-                sorts.forEachIndexed { i, s ->
-                    launch {
-                        val r = try { Load.Ok(Api.sortGames(s.id)) } catch (e: Exception) { err(e) }
-                        rows = rows.toMutableList().also { l -> if (i < l.size) l[i] = l[i].copy(games = r) }
-                    }
-                }
+                sorts = runCatching { Api.sorts(cookie()) }.getOrDefault(emptyList())
+                    .ifEmpty { listOf(Sort("top-playing-now", "Popular")) }
             } catch (e: Exception) {
                 homeError = e.message ?: e.toString()
-                homeBusy = false
             }
+            homeBusy = false
+        }
+    }
+
+    /** Loads one chart row the first time it is shown. */
+    fun ensureRow(id: String) {
+        if (rowData[id] != null && rowData[id] !is Load.Err) return
+        rowData[id] = Load.Busy
+        viewModelScope.launch {
+            rowData[id] = try { Load.Ok(Api.sortGames(id, cookie())) } catch (e: Exception) { err(e) }
         }
     }
 
@@ -81,19 +92,40 @@ class AppVm(private val app: Application) : AndroidViewModel(app) {
             // Keep the previous value on network errors; only a rejected cookie logs the user out.
             try {
                 val me = Api.me(cookie)
-                if (me == null) { Session.clear(app); clearSocial() }
-                account = me
-                if (me != null) loadSocial()
+                if (me == null) { Session.clear(app); clearSocial(); account = null; refreshAfterSwitch() }
+                else {
+                    Session.register(app, me.id, me.name, me.display)
+                    val changed = account?.id != me.id
+                    account = me
+                    loadSocial()
+                    if (changed) loadHome()
+                }
             } catch (_: Exception) {}
         }
     }
 
+    private fun refreshAfterSwitch() {
+        if (Session.load(app) != null) refreshAccount() else loadHome()
+    }
+
+    fun switchAccount(id: Long) {
+        Session.switchTo(app, id)
+        clearSocial(); account = null; balance = null
+        refreshAccount()
+    }
+
     private fun clearSocial() {
-        friends = Load.Idle; convos = Load.Idle
+        friends = Load.Idle; convos = Load.Idle; requests = Load.Idle; balance = null
     }
 
     fun loadSocial() {
-        loadFriends(); loadConvos()
+        loadFriends(); loadConvos(); loadBalance()
+    }
+
+    fun loadBalance() {
+        val me = account ?: return
+        val c = cookie() ?: return
+        viewModelScope.launch { balance = try { Api.robux(me.id, c) } catch (_: Exception) { null } }
     }
 
     fun loadFriends() {
@@ -110,6 +142,12 @@ class AppVm(private val app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { convos = try { Load.Ok(Api.conversations(me.id, c)) } catch (e: Exception) { err(e) } }
     }
 
+    fun loadRequests() {
+        val c = cookie() ?: return
+        requests = Load.Busy
+        viewModelScope.launch { requests = try { Load.Ok(Api.incomingRequests(c)) } catch (e: Exception) { err(e) } }
+    }
+
     fun logout() {
         Session.clear(app)
         account = null
@@ -118,6 +156,7 @@ class AppVm(private val app: Application) : AndroidViewModel(app) {
             android.webkit.CookieManager.getInstance().removeAllCookies(null)
             android.webkit.CookieManager.getInstance().flush()
         } catch (_: Exception) {}
+        if (Session.load(app) != null) refreshAccount() else loadHome()
     }
 
     fun searchGames() {
