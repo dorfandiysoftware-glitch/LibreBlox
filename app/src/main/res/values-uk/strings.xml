@@ -67,4 +67,6 @@
     <string name="chat_send">Надіслати</string>
     <string name="favorite_add">Додати до вподобаного</string>
     <string name="favorite_remove">Прибрати з вподобаного</string>
+    <string name="via_dorfikstrap">Грати через Dorfikstrap</string>
+    <string name="via_dorfikstrap_desc">Застосовувати ваші FastFlag перед запуском Roblox</string>
 </resources>

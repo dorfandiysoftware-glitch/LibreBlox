@@ -301,18 +301,6 @@ object Api {
         return users.map { Friend(it, pres[it.id]) }.sortedWith(compareByDescending<Friend> { it.presence?.type ?: 0 }.thenBy { it.user.display.lowercase() })
     }
 
-    suspend fun favorites(userId: Long, cookie: String): List<Game> =
-        get("https://games.roblox.com/v2/users/$userId/favorite/games?limit=30&sortOrder=Desc", cookie).optJSONArray("data").objects().map {
-            Game(it.optLong("id"), it.optJSONObject("rootPlace")?.optLong("id") ?: 0L, it.optString("name"))
-        }.filter { it.universeId != 0L }.withIcons()
-
-    suspend fun isFavorite(universeId: Long, cookie: String): Boolean =
-        get("https://games.roblox.com/v1/games/$universeId/favorites", cookie).optBoolean("isFavorited")
-
-    suspend fun setFavorite(universeId: Long, value: Boolean, cookie: String) {
-        request("https://games.roblox.com/v1/games/$universeId/favorites", "POST", cookie, JSONObject().put("isFavorited", value).toString())
-    }
-
     private const val CHAT = "https://apis.roblox.com/platform-chat-api/v1"
 
     suspend fun conversations(myId: Long, cookie: String): List<Convo> {

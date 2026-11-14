@@ -42,7 +42,6 @@ class AppVm(private val app: Application) : AndroidViewModel(app) {
 
     // account + social
     var account by mutableStateOf<User?>(null)
-    var favorites by mutableStateOf<Load<List<Game>>>(Load.Idle)
     var friends by mutableStateOf<Load<List<Friend>>>(Load.Idle)
     var convos by mutableStateOf<Load<List<Convo>>>(Load.Idle)
 
@@ -90,18 +89,11 @@ class AppVm(private val app: Application) : AndroidViewModel(app) {
     }
 
     private fun clearSocial() {
-        favorites = Load.Idle; friends = Load.Idle; convos = Load.Idle
+        friends = Load.Idle; convos = Load.Idle
     }
 
     fun loadSocial() {
-        loadFavorites(); loadFriends(); loadConvos()
-    }
-
-    fun loadFavorites() {
-        val me = account ?: return
-        val c = cookie() ?: return
-        favorites = Load.Busy
-        viewModelScope.launch { favorites = try { Load.Ok(Api.favorites(me.id, c)) } catch (e: Exception) { err(e) } }
+        loadFriends(); loadConvos()
     }
 
     fun loadFriends() {

@@ -128,18 +128,12 @@ fun HomeTab(vm: AppVm, modifier: Modifier, onGame: (Game) -> Unit, onUser: (Long
         if (vm.account != null && fr is Load.Ok && fr.v.isNotEmpty()) item {
             SectionHeader(stringResource(R.string.friends_count_fmt, fr.v.size))
             LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                items(fr.v, key = { it.user.id }) { f ->
+                items(fr.v) { f ->
                     Column(Modifier.width(68.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                         PresenceAvatar(f, 64) { onUser(f.user.id) }
                         Text(f.user.display, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
                     }
                 }
-            }
-        }
-        if (vm.account != null) {
-            val fav = vm.favorites
-            if (fav !is Load.Ok || fav.v.isNotEmpty()) item {
-                GameRow(stringResource(R.string.favorites), fav, vm::loadFavorites, onGame)
             }
         }
         if (vm.homeError != null) item { ErrorBox(vm.homeError ?: "", vm::loadHome) }
@@ -196,7 +190,7 @@ fun FriendsTab(vm: AppVm, modifier: Modifier, onUser: (Long) -> Unit, onLogin: (
             is Load.Err -> ErrorBox(f.msg, vm::loadFriends)
             is Load.Ok -> if (f.v.isEmpty()) Centered { Text(stringResource(R.string.no_friends)) }
             else LazyColumn(Modifier.fillMaxSize()) {
-                items(f.v, key = { it.user.id }) { fr ->
+                items(f.v) { fr ->
                     val p = fr.presence
                     Row(Modifier.fillMaxWidth().clickable { onUser(fr.user.id) }.padding(16.dp, 8.dp), verticalAlignment = Alignment.CenterVertically) {
                         PresenceAvatar(fr, 52) { onUser(fr.user.id) }
@@ -223,14 +217,9 @@ fun FriendsTab(vm: AppVm, modifier: Modifier, onUser: (Long) -> Unit, onLogin: (
     }
 }
 
-fun openJoin(ctx: android.content.Context, placeId: Long, gameId: String) {
-    val uri = "roblox://experiences/start?placeId=$placeId" + if (gameId.isNotEmpty()) "&gameInstanceId=$gameId" else ""
-    try {
-        ctx.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(uri)).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
-    } catch (e: android.content.ActivityNotFoundException) {
-        openWeb(ctx, "https://www.roblox.com/games/$placeId")
-    }
-}
+fun openJoin(ctx: android.content.Context, placeId: Long, gameId: String) =
+    startRoblox(ctx, "roblox://experiences/start?placeId=$placeId" + if (gameId.isNotEmpty()) "&gameInstanceId=$gameId" else "",
+        "https://www.roblox.com/games/$placeId")
 
 // ---------------- Chat ----------------
 
@@ -244,7 +233,7 @@ fun ChatTab(vm: AppVm, modifier: Modifier, onChat: (Convo) -> Unit, onLogin: () 
             is Load.Err -> ErrorBox(c.msg, vm::loadConvos)
             is Load.Ok -> if (c.v.isEmpty()) Centered { Text(stringResource(R.string.chat_empty)) }
             else LazyColumn(Modifier.fillMaxSize()) {
-                items(c.v, key = { it.id }) { cv ->
+                items(c.v) { cv ->
                     Row(Modifier.fillMaxWidth().clickable { onChat(cv) }.padding(16.dp, 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         AsyncImage(cv.avatar, null, Modifier.size(48.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHigh), contentScale = ContentScale.Crop)
                         Spacer(Modifier.width(14.dp))
@@ -275,7 +264,7 @@ fun ChatScreen(vm: AppVm, convo: Convo, onBack: () -> Unit) {
                         val state = rememberLazyListState()
                         LaunchedEffect(l.v.size) { if (l.v.isNotEmpty()) state.scrollToItem(l.v.size - 1) }
                         LazyColumn(Modifier.fillMaxSize(), state = state, contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            items(l.v, key = { it.id }) { msg ->
+                            items(l.v) { msg ->
                                 val mine = msg.senderId == me
                                 Row(Modifier.fillMaxWidth(), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
                                     Text(

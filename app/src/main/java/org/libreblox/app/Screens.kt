@@ -84,13 +84,28 @@ fun compact(n: Long): String = when {
 
 fun likePercent(g: Game): Int? = (g.up + g.down).takeIf { it > 0 }?.let { (g.up * 100 / it).toInt() }
 
-fun openPlay(ctx: Context, placeId: Long) {
+const val DORFIKSTRAP = "org.dorfikstrap.app"
+
+fun dorfikstrapInstalled(ctx: Context): Boolean = try {
+    ctx.packageManager.getPackageInfo(DORFIKSTRAP, 0); true
+} catch (e: Exception) { false }
+
+/** Starts a roblox:// link: through Dorfikstrap (FastFlags applied first) when it is installed and enabled. */
+fun startRoblox(ctx: Context, uri: String, fallbackWeb: String) {
+    val viaDorf = ctx.getSharedPreferences("lb", Context.MODE_PRIVATE).getBoolean("via_dorfikstrap", true) && dorfikstrapInstalled(ctx)
     try {
-        ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("roblox://experiences/start?placeId=$placeId")).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-    } catch (e: ActivityNotFoundException) {
-        openWeb(ctx, "https://www.roblox.com/games/$placeId")
+        if (viaDorf) {
+            ctx.startActivity(Intent().setClassName(DORFIKSTRAP, "$DORFIKSTRAP.LaunchActivity").putExtra("uri", uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } else {
+            ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
+    } catch (e: Exception) {
+        openWeb(ctx, fallbackWeb)
     }
 }
+
+fun openPlay(ctx: Context, placeId: Long) =
+    startRoblox(ctx, "roblox://experiences/start?placeId=$placeId", "https://www.roblox.com/games/$placeId")
 
 fun openWeb(ctx: Context, url: String) {
     try { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) } catch (_: Exception) {}
@@ -230,6 +245,19 @@ fun SettingsTab(
                 Switch(dynamic, onDynamic)
             }
         }
+        val ctx = LocalContext.current
+        if (dorfikstrapInstalled(ctx)) {
+            var via by remember { mutableStateOf(ctx.getSharedPreferences("lb", Context.MODE_PRIVATE).getBoolean("via_dorfikstrap", true)) }
+            Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(20.dp)) {
+                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Column(Modifier.weight(1f)) {
+                        Text(stringResource(R.string.via_dorfikstrap), style = MaterialTheme.typography.titleMedium)
+                        Text(stringResource(R.string.via_dorfikstrap_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(via, { via = it; ctx.getSharedPreferences("lb", Context.MODE_PRIVATE).edit().putBoolean("via_dorfikstrap", it).apply() })
+                }
+            }
+        }
         Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(20.dp)) {
             Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(stringResource(R.string.about), style = MaterialTheme.typography.titleMedium)
@@ -289,7 +317,6 @@ fun GameScreen(base: Game, onBack: () -> Unit, onUser: (Long) -> Unit) {
                         Spacer(Modifier.width(8.dp))
                         Text(stringResource(R.string.play))
                     }
-                    FavoriteButton(d.game.universeId)
                     Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(20.dp)) {
                         Row(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
                             Stat(stringResource(R.string.stat_playing), compact(d.game.players), Modifier.weight(1f))
@@ -405,28 +432,3 @@ fun LoginScreen(onBack: () -> Unit, onDone: () -> Unit) {
     }
 }
 
-@Composable
-fun FavoriteButton(universeId: Long) {
-    val ctx = LocalContext.current
-    val cookie = remember { Session.load(ctx) } ?: return
-    val scope = androidx.compose.runtime.rememberCoroutineScope()
-    var fav by remember { mutableStateOf<Boolean?>(null) }
-    var busy by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(universeId) { fav = try { Api.isFavorite(universeId, cookie) } catch (e: Exception) { error = e.message; null } }
-    val v = fav
-    if (v != null) {
-        FilledTonalButton(
-            onClick = {
-                if (busy) return@FilledTonalButton
-                busy = true
-                scope.launch {
-                    try { Api.setFavorite(universeId, !v, cookie); fav = !v; error = null } catch (e: Exception) { error = e.message }
-                    busy = false
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-        ) { Text(stringResource(if (v) R.string.favorite_remove else R.string.favorite_add)) }
-    }
-    error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-}
