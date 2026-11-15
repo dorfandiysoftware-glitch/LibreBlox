@@ -94,7 +94,7 @@ private fun PostCard(poster: String, verified: Boolean, role: String, date: Stri
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+@OptIn(ExperimentalLayoutApi::class, androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun GroupScreen(vm: AppVm, id: Long, onBack: () -> Unit, onUser: (Long) -> Unit, onGame: (Game) -> Unit, onGroup: (Long) -> Unit, onMembers: (String) -> Unit) {
     val ctx = LocalContext.current
