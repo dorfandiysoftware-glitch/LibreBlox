@@ -338,10 +338,24 @@ object Api {
         }
     }
 
+    /** Message text: the field is a string in some responses and a nested object in others. */
+    private fun textOf(v: Any?): String = when (v) {
+        null, JSONObject.NULL -> ""
+        is String -> v
+        is JSONObject -> listOf("text", "content", "message", "body", "value").firstNotNullOfOrNull { k -> textOf(v.opt(k)).takeIf { it.isNotEmpty() } } ?: ""
+        is JSONArray -> (0 until v.length()).joinToString(" ") { textOf(v.opt(it)) }.trim()
+        else -> v.toString()
+    }
+
     suspend fun messages(conversationId: String, cookie: String): List<Msg> {
         val j = get("$CHAT/get-conversation-messages?conversation_id=${enc(conversationId)}", cookie)
-        return j.optJSONArray("messages").objects().map {
-            Msg(it.optString("id"), it.optLong("sender_user_id"), it.optString("content"), it.optString("created_at"))
+        val arr = (j.optJSONArray("messages") ?: j.optJSONArray("data")).objects()
+        return arr.map {
+            var text = listOf("content", "text", "message", "body").firstNotNullOfOrNull { k -> textOf(it.opt(k)).takeIf { t -> t.isNotEmpty() } } ?: ""
+            // Unknown shape: show the field names instead of an empty bubble, so the format can be fixed.
+            if (text.isEmpty()) text = "[" + it.keys().asSequence().joinToString(",") + "]"
+            val sender = it.optLong("sender_user_id").takeIf { x -> x != 0L } ?: it.optJSONObject("sender")?.optLong("id") ?: it.optLong("senderId")
+            Msg(it.optString("id"), sender, text, it.optString("created_at").ifEmpty { it.optString("createdAt") })
         }.sortedBy { it.sent }
     }
 

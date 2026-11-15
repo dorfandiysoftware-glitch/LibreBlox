@@ -90,19 +90,8 @@ fun dorfikstrapInstalled(ctx: Context): Boolean = try {
     ctx.packageManager.getPackageInfo(DORFIKSTRAP, 0); true
 } catch (e: Exception) { false }
 
-/** Starts a roblox:// link: through Dorfikstrap (FastFlags applied first) when it is installed and enabled. */
-fun startRoblox(ctx: Context, uri: String, fallbackWeb: String) {
-    val viaDorf = ctx.getSharedPreferences("lb", Context.MODE_PRIVATE).getBoolean("via_dorfikstrap", true) && dorfikstrapInstalled(ctx)
-    try {
-        if (viaDorf) {
-            ctx.startActivity(Intent().setClassName(DORFIKSTRAP, "$DORFIKSTRAP.LaunchActivity").putExtra("uri", uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        } else {
-            ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(uri)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-        }
-    } catch (e: Exception) {
-        openWeb(ctx, fallbackWeb)
-    }
-}
+/** Starts a roblox:// link: FastFlags are applied first (built-in bootstrapper, needs Shizuku). */
+fun startRoblox(ctx: Context, uri: String, fallbackWeb: String) = Boot.launch(ctx, uri, fallbackWeb)
 
 fun openPlay(ctx: Context, placeId: Long) =
     startRoblox(ctx, "roblox://experiences/start?placeId=$placeId", "https://www.roblox.com/games/$placeId")

@@ -123,7 +123,7 @@ fun HomeTab(
 ) {
     val cfg = LocalCfg.current
     val personal = vm.sorts.filter { FOR_YOU.containsMatchIn(it.title) || FOR_YOU.containsMatchIn(it.id) }.ifEmpty { vm.sorts.take(3) }
-    val sorts = if (forYou) personal else vm.sorts
+    val sorts = cfg.orderedSorts(if (forYou) personal else vm.sorts).filter { it.id !in cfg.hiddenSorts }
     LazyColumn(modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 16.dp)) {
         if (forYou) {
             if (vm.account == null) item {
@@ -131,13 +131,13 @@ fun HomeTab(
                     Text(stringResource(R.string.login_required), Modifier.weight(1f), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     FilledTonalButton(onLogin) { Text(stringResource(R.string.login)) }
                 }
-            } else item {
+            } else if (cfg.on("home_addfriends")) item {
                 FilledTonalButton(onAddFriends, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
                     Text(stringResource(R.string.add_friends))
                 }
             }
             val fr = vm.friends
-            if (vm.account != null && fr is Load.Ok && fr.v.isNotEmpty()) item {
+            if (cfg.on("home_friends") && vm.account != null && fr is Load.Ok && fr.v.isNotEmpty()) item {
                 SectionHeader(stringResource(R.string.friends_count_fmt, fr.v.size))
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     items(fr.v) { f ->
@@ -148,7 +148,7 @@ fun HomeTab(
                     }
                 }
             }
-            if (cfg.history.isNotEmpty()) item {
+            if (cfg.on("home_continue") && cfg.history.isNotEmpty()) item {
                 Text(
                     stringResource(R.string.continue_title) + "  ›",
                     Modifier.clickable(onClick = onContinue).padding(horizontal = 16.dp, vertical = 8.dp),

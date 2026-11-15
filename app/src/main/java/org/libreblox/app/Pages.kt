@@ -69,7 +69,7 @@ import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
 
 @Composable
-private fun Panel(content: @Composable () -> Unit) = Card(
+fun Panel(content: @Composable () -> Unit) = Card(
     colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
     shape = RoundedCornerShape(20.dp), modifier = Modifier.fillMaxWidth(),
 ) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { content() } }
@@ -259,7 +259,7 @@ fun SettingsScreen(vm: AppVm, onBack: () -> Unit, onDocs: () -> Unit) {
                 when (tab) {
                     0 -> AccountPage(vm)
                     1 -> MessagesPage()
-                    2 -> CustomPage(cfg, onDocs)
+                    2 -> CustomPage(cfg, vm, onDocs)
                     else -> BootstrapperPage()
                 }
             }
@@ -300,7 +300,7 @@ private fun MessagesPage() {
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-private fun CustomPage(cfg: Cfg, onDocs: () -> Unit) {
+private fun CustomPage(cfg: Cfg, vm: AppVm, onDocs: () -> Unit) {
     val clip = LocalClipboardManager.current
     val ctx = LocalContext.current
     var importText by remember { mutableStateOf("") }
@@ -342,20 +342,32 @@ private fun CustomPage(cfg: Cfg, onDocs: () -> Unit) {
     Panel {
         Text(stringResource(R.string.text_size) + ": ${(cfg.textScale * 100).toInt()}%", style = MaterialTheme.typography.titleMedium)
         Slider(cfg.textScale, { cfg.textScale = Math.round(it * 20) / 20f }, valueRange = 0.8f..1.5f, steps = 13, onValueChangeFinished = { cfg.save() })
-        Text(stringResource(R.string.drawer_opacity) + ": ${(cfg.drawerAlpha * 100).toInt()}%", style = MaterialTheme.typography.titleMedium)
-        Slider(cfg.drawerAlpha, { cfg.drawerAlpha = Math.round(it * 20) / 20f }, valueRange = 0.3f..1f, steps = 13, onValueChangeFinished = { cfg.save() })
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.haptics), Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
             Switch(cfg.haptics, { cfg.haptics = it; cfg.save() })
         }
-        if (dorfikstrapInstalled(ctx)) Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.via_dorfikstrap), style = MaterialTheme.typography.titleMedium)
-                Text(stringResource(R.string.via_dorfikstrap_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Switch(cfg.viaDorfikstrap, { cfg.viaDorfikstrap = it; cfg.save() })
-        }
     }
+    Panel {
+        Text(stringResource(R.string.drawer_menu), style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.drawer_opacity) + ": ${(cfg.drawerAlpha * 100).toInt()}%")
+        Slider(cfg.drawerAlpha, { cfg.drawerAlpha = Math.round(it * 20) / 20f }, valueRange = 0.2f..1f, steps = 15, onValueChangeFinished = { cfg.save() })
+        Text(stringResource(R.string.drawer_width) + ": ${cfg.drawerWidth.toInt()} dp")
+        Slider(cfg.drawerWidth, { cfg.drawerWidth = Math.round(it / 10) * 10f }, valueRange = 220f..340f, steps = 11, onValueChangeFinished = { cfg.save() })
+        ToggleRow(cfg, "drawer_header", R.string.show_drawer_header)
+        ToggleRow(cfg, "drawer_balance", R.string.show_balance)
+    }
+    Panel {
+        Text(stringResource(R.string.show_hide), style = MaterialTheme.typography.titleMedium)
+        ToggleRow(cfg, "tab_foryou", R.string.for_you, others = listOf("tab_charts"))
+        ToggleRow(cfg, "tab_charts", R.string.charts, others = listOf("tab_foryou"))
+        ToggleRow(cfg, "home_addfriends", R.string.add_friends)
+        ToggleRow(cfg, "home_friends", R.string.show_friends_strip)
+        ToggleRow(cfg, "home_continue", R.string.continue_title)
+        ToggleRow(cfg, "top_search", R.string.tab_search)
+        ToggleRow(cfg, "top_robux", R.string.buy_robux)
+        ToggleRow(cfg, "top_messages", R.string.drawer_messages)
+    }
+    ChartsPanel(cfg, vm)
     OrderPanel(stringResource(R.string.bottom_bar), cfg.navOrder, cfg.navHidden, 1, cfg) { id ->
         stringResource(when (id) { "home" -> R.string.tab_home; "chat" -> R.string.tab_chat; else -> R.string.tab_me })
     }
@@ -398,22 +410,6 @@ private fun OrderPanel(title: String, order: MutableList<String>, hidden: Mutabl
         }
     }
 }
-
-@Composable
-private fun BootstrapperPage() {
-    val ctx = LocalContext.current
-    Panel {
-        Text(stringResource(R.string.bootstrapper_note), style = MaterialTheme.typography.bodyMedium)
-        if (dorfikstrapInstalled(ctx)) {
-            Button({
-                ctx.packageManager.getLaunchIntentForPackage(DORFIKSTRAP)?.let { ctx.startActivity(it.addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)) }
-            }) { Text(stringResource(R.string.bootstrapper_open)) }
-        } else {
-            Button({ openWeb(ctx, "https://github.com/dorfandiysoftware-glitch/dorfikstrap/releases") }) { Text(stringResource(R.string.bootstrapper_get)) }
-        }
-    }
-}
-
 
 // ---------------- native lists (favorites, communities, inventory, trades, marketplace) ----------------
 
@@ -509,6 +505,38 @@ fun TradesScreen(vm: AppVm, onBack: () -> Unit) {
                     is Load.Err -> ErrorBox(s.msg, reload)
                     else -> Centered { CircularProgressIndicator() }
                 }
+            }
+        }
+    }
+}
+
+/** A show/hide switch. [others]: keys of which at least one must stay on (so a tab can't vanish entirely). */
+@Composable
+private fun ToggleRow(cfg: Cfg, key: String, label: Int, others: List<String> = emptyList()) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Text(stringResource(label), Modifier.weight(1f))
+        Switch(cfg.on(key), { on -> if (on || others.isEmpty() || others.any { cfg.on(it) }) cfg.set(key, on) })
+    }
+}
+
+/** Every chart row Roblox offers: reorder and hide. */
+@Composable
+private fun ChartsPanel(cfg: Cfg, vm: AppVm) {
+    val sorts = cfg.orderedSorts(vm.sorts)
+    Panel {
+        Text(stringResource(R.string.charts_manage), style = MaterialTheme.typography.titleMedium)
+        if (sorts.isEmpty()) Text(stringResource(R.string.charts_none), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        sorts.forEachIndexed { i, s ->
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(s.title, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                fun move(d: Int) {
+                    val ids = sorts.map { it.id }.toMutableList()
+                    val j = i + d
+                    if (j in ids.indices) { val t = ids[i]; ids[i] = ids[j]; ids[j] = t; cfg.sortOrder.clear(); cfg.sortOrder += ids; cfg.save() }
+                }
+                IconButton({ move(-1) }, enabled = i > 0) { Icon(Icons.Default.KeyboardArrowUp, null) }
+                IconButton({ move(1) }, enabled = i < sorts.lastIndex) { Icon(Icons.Default.KeyboardArrowDown, null) }
+                Switch(s.id !in cfg.hiddenSorts, { on -> if (on) cfg.hiddenSorts.remove(s.id) else cfg.hiddenSorts.add(s.id); cfg.save() })
             }
         }
     }

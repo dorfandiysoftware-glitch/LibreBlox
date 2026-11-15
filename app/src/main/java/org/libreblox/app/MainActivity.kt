@@ -54,6 +54,12 @@ import androidx.compose.material3.ModalNavigationDrawer
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.material3.NavigationDrawerItemDefaults
+import androidx.compose.material3.AssistChip
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
@@ -194,28 +200,47 @@ private fun Root(vm: AppVm, cfg: Cfg) {
             ModalNavigationDrawer(
                 drawerState = drawer,
                 drawerContent = {
-                    ModalDrawerSheet(drawerContainerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = cfg.drawerAlpha)) {
-                        Column(Modifier.verticalScroll(rememberScrollState())) {
+                    val a = cfg.drawerAlpha
+                    ModalDrawerSheet(
+                        modifier = Modifier.width(cfg.drawerWidth.dp),
+                        drawerContainerColor = MaterialTheme.colorScheme.background.copy(alpha = a),
+                    ) {
+                        Column(Modifier.verticalScroll(rememberScrollState()).padding(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             val me = vm.account
-                            Column(Modifier.fillMaxWidth().padding(20.dp, 28.dp, 20.dp, 12.dp)) {
-                                if (me == null) {
-                                    Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge)
-                                    TextButton({ scope.launch { drawer.close() }; login() }) { Text(stringResource(R.string.login)) }
-                                } else {
-                                    AsyncImage(me.avatar, null, Modifier.size(64.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-                                    Spacer(Modifier.height(10.dp))
-                                    Text(me.display, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    Text("@${me.name}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                    vm.balance?.let { Text(stringResource(R.string.robux_fmt, compact(it)), color = RobloxGreen) }
+                            if (cfg.on("drawer_header")) Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh.copy(alpha = a)),
+                                shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                                    if (me == null) {
+                                        Text(stringResource(R.string.app_name), style = MaterialTheme.typography.titleLarge)
+                                        FilledTonalButton({ scope.launch { drawer.close() }; login() }) { Text(stringResource(R.string.login)) }
+                                    } else {
+                                        AsyncImage(me.avatar, null, Modifier.size(64.dp).clip(CircleShape), contentScale = ContentScale.Crop)
+                                        Spacer(Modifier.height(10.dp))
+                                        Text(me.display, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        Text("@${me.name}", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                        if (cfg.on("drawer_balance")) vm.balance?.let {
+                                            Spacer(Modifier.height(8.dp))
+                                            AssistChip({}, { Text(stringResource(R.string.robux_fmt, compact(it))) })
+                                        }
+                                    }
                                 }
                             }
-                            cfg.drawerOrder.filter { it !in cfg.drawerHidden }.forEach { id ->
-                                if (me == null && id in listOf("switch", "logout", "inventory", "trades")) return@forEach
-                                NavigationDrawerItem(
-                                    label = { Text(stringResource(drawerLabel(id))) }, selected = false, onClick = { go(id) },
-                                    icon = { Icon(drawerIcon(id), null) },
-                                    modifier = Modifier.padding(horizontal = 12.dp),
-                                )
+                            Card(
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = a)),
+                                shape = RoundedCornerShape(24.dp), modifier = Modifier.fillMaxWidth(),
+                            ) {
+                                Column(Modifier.padding(vertical = 6.dp, horizontal = 6.dp)) {
+                                    cfg.drawerOrder.filter { it !in cfg.drawerHidden }.forEach { id ->
+                                        if (me == null && id in listOf("switch", "logout", "inventory", "trades")) return@forEach
+                                        NavigationDrawerItem(
+                                            label = { Text(stringResource(drawerLabel(id))) }, selected = false, onClick = { go(id) },
+                                            icon = { Icon(drawerIcon(id), null) },
+                                            colors = NavigationDrawerItemDefaults.colors(unselectedContainerColor = androidx.compose.ui.graphics.Color.Transparent),
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -236,9 +261,9 @@ private fun Root(vm: AppVm, cfg: Cfg) {
                                         IconButton({ tap(); push(Screen.NewChatS) }) { Icon(Icons.Default.Add, null) }
                                     }
                                     "home" -> {
-                                        IconButton({ tap(); push(Screen.SearchS) }) { Icon(Icons.Default.Search, null) }
-                                        IconButton({ tap(); openWeb(ctx, "https://www.roblox.com/upgrades/robux") }) { Icon(Icons.Default.ShoppingCart, null) }
-                                        IconButton({ tap(); tab = "chat" }) { Icon(Icons.Default.Email, null) }
+                                        if (cfg.on("top_search")) IconButton({ tap(); push(Screen.SearchS) }) { Icon(Icons.Default.Search, null) }
+                                        if (cfg.on("top_robux")) IconButton({ tap(); openWeb(ctx, "https://www.roblox.com/upgrades/robux") }) { Icon(Icons.Default.ShoppingCart, null) }
+                                        if (cfg.on("top_messages")) IconButton({ tap(); tab = "chat" }) { Icon(Icons.Default.Email, null) }
                                     }
                                 }
                             },
@@ -257,16 +282,24 @@ private fun Root(vm: AppVm, cfg: Cfg) {
                 ) { pad ->
                     val m = Modifier.padding(pad)
                     when (if (tab in cfg.navOrder && tab !in cfg.navHidden) tab else cfg.navOrder.first { it !in cfg.navHidden }) {
-                        "home" -> Column(m) {
-                            PrimaryTabRow(homeTab, containerColor = MaterialTheme.colorScheme.background) {
-                                Tab(homeTab == 0, { homeTab = 0 }, text = { Text(stringResource(R.string.for_you)) })
-                                Tab(homeTab == 1, { homeTab = 1 }, text = { Text(stringResource(R.string.charts)) })
+                        "home" -> {
+                            val tabs = listOfNotNull(
+                                if (cfg.on("tab_foryou")) true else null,
+                                if (cfg.on("tab_charts")) false else null,
+                            ).ifEmpty { listOf(true) }
+                            val idx = homeTab.coerceIn(0, tabs.lastIndex)
+                            Column(m) {
+                                if (tabs.size > 1) PrimaryTabRow(idx, containerColor = MaterialTheme.colorScheme.background) {
+                                    tabs.forEachIndexed { i, forYou ->
+                                        Tab(idx == i, { homeTab = i }, text = { Text(stringResource(if (forYou) R.string.for_you else R.string.charts)) })
+                                    }
+                                }
+                                HomeTab(
+                                    vm, Modifier, forYou = tabs[idx],
+                                    onGame = { push(Screen.GameS(it)) }, onUser = { push(Screen.UserS(it)) },
+                                    onLogin = { login() }, onAddFriends = { push(Screen.AddFriendsS) }, onContinue = { push(Screen.ContinueS) },
+                                )
                             }
-                            HomeTab(
-                                vm, Modifier, forYou = homeTab == 0,
-                                onGame = { push(Screen.GameS(it)) }, onUser = { push(Screen.UserS(it)) },
-                                onLogin = { login() }, onAddFriends = { push(Screen.AddFriendsS) }, onContinue = { push(Screen.ContinueS) },
-                            )
                         }
                         "chat" -> ChatTab(vm, m, chatFilter, { push(Screen.ChatS(it)) }, { login() })
                         else -> MeTab(vm, m, onLogin = { login() }, onProfile = { vm.account?.let { push(Screen.UserS(it.id)) } })

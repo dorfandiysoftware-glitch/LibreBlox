@@ -6,6 +6,7 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
@@ -100,6 +101,21 @@ class Cfg(ctx: Context) {
     var haptics by mutableStateOf(p.getBoolean("haptics", true))
     var drawerAlpha by mutableFloatStateOf(p.getFloat("drawer_alpha", 1f))
     var viaDorfikstrap by mutableStateOf(p.getBoolean("via_dorfikstrap", true))
+    var drawerWidth by mutableFloatStateOf(p.getFloat("drawer_width", 300f))
+
+    /** Show/hide switches for home blocks, top-bar buttons etc. A missing key means "shown". */
+    val toggles = mutableStateMapOf<String, Boolean>().also { m ->
+        try { val o = JSONObject(p.getString("toggles", "{}")); for (k in o.keys()) m[k] = o.getBoolean(k) } catch (_: Exception) {}
+    }
+    fun on(key: String) = toggles[key] != false
+    fun set(key: String, v: Boolean) { toggles[key] = v; save() }
+
+    val hiddenSorts = mutableStateListOf<String>().also { it += split("hidden_sorts", emptyList()) }
+    val sortOrder = mutableStateListOf<String>().also { it += split("sort_order", emptyList()) }
+    fun orderedSorts(all: List<Sort>): List<Sort> {
+        val idx = sortOrder.withIndex().associate { it.value to it.index }
+        return all.sortedBy { idx[it.id] ?: Int.MAX_VALUE }
+    }
 
     val navOrder = mutableStateListOf<String>().also { it += split("nav_order", NavItem.values().map { n -> n.id }) }
     val navHidden = mutableStateListOf<String>().also { it += split("nav_hidden", emptyList()) }
@@ -129,7 +145,9 @@ class Cfg(ctx: Context) {
             .putString("theme_id", themeId)
             .putString("themes", JSONArray().also { a -> customThemes.forEach { a.put(themeToJson(it)) } }.toString())
             .putFloat("text_scale", textScale).putBoolean("haptics", haptics).putFloat("drawer_alpha", drawerAlpha)
-            .putBoolean("via_dorfikstrap", viaDorfikstrap)
+            .putBoolean("via_dorfikstrap", viaDorfikstrap).putFloat("drawer_width", drawerWidth)
+            .putString("toggles", JSONObject().also { o -> toggles.forEach { (k, v) -> o.put(k, v) } }.toString())
+            .putString("hidden_sorts", hiddenSorts.joinToString(",")).putString("sort_order", sortOrder.joinToString(","))
             .putString("nav_order", navOrder.joinToString(",")).putString("nav_hidden", navHidden.joinToString(","))
             .putString("drawer_order", drawerOrder.joinToString(",")).putString("drawer_hidden", drawerHidden.joinToString(","))
             .apply()
@@ -149,6 +167,7 @@ class Cfg(ctx: Context) {
         navHidden.clear()
         drawerOrder.clear(); drawerOrder += DRAWER_ITEMS
         drawerHidden.clear()
+        toggles.clear(); hiddenSorts.clear(); sortOrder.clear()
         save()
     }
 }
