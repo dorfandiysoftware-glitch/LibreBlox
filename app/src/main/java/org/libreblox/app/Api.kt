@@ -41,6 +41,18 @@ data class GameDetails(
 
 data class Entry(val id: Long, val title: String, val subtitle: String, val image: String?, val url: String)
 
+data class Shout(val body: String, val posterId: Long, val poster: String, val posterVerified: Boolean, val role: String, val created: String)
+
+data class GroupInfo(
+    val id: Long, val name: String, val description: String, val verified: Boolean,
+    val ownerId: Long, val ownerName: String, val ownerVerified: Boolean,
+    val members: Long, val publicEntry: Boolean, val icon: String?, val shout: Shout?,
+)
+
+data class Role(val id: Long, val name: String, val rank: Int, val members: Long)
+
+data class Post(val id: Long, val posterId: Long, val poster: String, val verified: Boolean, val role: String, val created: String, val body: String)
+
 data class Sort(val id: String, val title: String)
 
 data class User(val id: Long, val name: String, val display: String, val verified: Boolean = false, val avatar: String? = null)
@@ -512,4 +524,109 @@ object Api {
     }
 
     suspend fun block(userId: Long, cookie: String) { request("https://accountsettings.roblox.com/v1/users/$userId/block", "POST", cookie, "{}") }
+    // ---------------- groups (communities) ----------------
+
+    suspend fun groupInfo(id: Long, cookie: String?): GroupInfo = coroutineScope {
+        val j = get("https://groups.roblox.com/v1/groups/$id", cookie)
+        val icon = async {
+            runCatching {
+                get("https://thumbnails.roblox.com/v1/groups/icons?groupIds=$id&size=420x420&format=Png&isCircular=false")
+                    .optJSONArray("data").objects().firstOrNull()?.optString("imageUrl")?.ifEmpty { null }
+            }.getOrNull()
+        }
+        val o = j.optJSONObject("owner")
+        val sh = j.optJSONObject("shout")
+        val shout = sh?.takeIf { it.optString("body").isNotEmpty() }?.let {
+            val p = it.optJSONObject("poster")
+            val pid = p?.optLong("userId") ?: 0L
+            val role = runCatching { roleIn(pid, id) }.getOrNull().orEmpty()
+            Shout(it.optString("body"), pid, p?.optString("displayName")?.ifEmpty { p.optString("username") } ?: "", p?.optBoolean("hasVerifiedBadge") ?: false, role, it.optString("updated").ifEmpty { it.optString("created") })
+        }
+        GroupInfo(
+            id, j.optString("name"), j.optString("description"), j.optBoolean("hasVerifiedBadge"),
+            o?.optLong("userId") ?: 0L, o?.optString("displayName")?.ifEmpty { o.optString("username") } ?: "", o?.optBoolean("hasVerifiedBadge") ?: false,
+            j.optLong("memberCount"), j.optBoolean("publicEntryAllowed"), icon.await(), shout,
+        )
+    }
+
+    /** The role name of a user in a group, or "" when not a member. */
+    suspend fun roleIn(userId: Long, groupId: Long): String {
+        if (userId == 0L) return ""
+        val rows = get("https://groups.roblox.com/v2/users/$userId/groups/roles").optJSONArray("data").objects()
+        return rows.firstOrNull { it.optJSONObject("group")?.optLong("id") == groupId }?.optJSONObject("role")?.optString("name").orEmpty()
+    }
+
+    suspend fun groupRoles(id: Long): List<Role> =
+        get("https://groups.roblox.com/v1/groups/$id/roles").optJSONArray("roles").objects()
+            .map { Role(it.optLong("id"), it.optString("name"), it.optInt("rank"), it.optLong("memberCount")) }.sortedByDescending { it.rank }
+
+    suspend fun nameHistory(id: Long, cookie: String?): List<String> =
+        get("https://groups.roblox.com/v1/groups/$id/name-history?limit=25&sortOrder=Desc", cookie).optJSONArray("data").objects().map { it.optString("name") }.filter { it.isNotEmpty() }
+
+    /** Members of a role (roleId 0 = everyone), with avatars. */
+    suspend fun members(groupId: Long, roleId: Long): List<User> {
+        val url = if (roleId == 0L) "https://groups.roblox.com/v1/groups/$groupId/users?limit=100&sortOrder=Asc"
+        else "https://groups.roblox.com/v1/groups/$groupId/roles/$roleId/users?limit=100&sortOrder=Asc"
+        val rows = get(url).optJSONArray("data").objects().map { it.optJSONObject("user") ?: it }
+        return rows.map { User(it.optLong("userId"), it.optString("username"), it.optString("displayName").ifEmpty { it.optString("username") }, it.optBoolean("hasVerifiedBadge")) }
+            .filter { it.id != 0L }.withAvatars()
+    }
+
+    suspend fun wallPosts(groupId: Long, cookie: String?): List<Post> =
+        get("https://groups.roblox.com/v2/groups/$groupId/wall/posts?limit=20&sortOrder=Desc", cookie).optJSONArray("data").objects().map {
+            val p = it.optJSONObject("poster"); val u = p?.optJSONObject("user")
+            Post(it.optLong("id"), u?.optLong("userId") ?: 0L, u?.optString("displayName")?.ifEmpty { u.optString("username") } ?: "", u?.optBoolean("hasVerifiedBadge") ?: false,
+                p?.optJSONObject("role")?.optString("name").orEmpty(), it.optString("created"), it.optString("body"))
+        }
+
+    /** Experiences of a group, with live player counts and like ratio. */
+    suspend fun groupGames(groupId: Long): List<Game> {
+        val rows = get("https://games.roblox.com/v2/groups/$groupId/games?accessFilter=2&limit=50&sortOrder=Desc").optJSONArray("data").objects()
+        val games = rows.map { Game(it.optLong("id"), it.optJSONObject("rootPlace")?.optLong("id") ?: 0L, it.optString("name")) }.filter { it.universeId != 0L }
+        if (games.isEmpty()) return games
+        val ids = games.joinToString(",") { it.universeId.toString() }
+        val playing = runCatching { get("https://games.roblox.com/v1/games?universeIds=$ids").optJSONArray("data").objects().associate { it.optLong("id") to it.optLong("playing") } }.getOrDefault(emptyMap())
+        val votes = runCatching { get("https://games.roblox.com/v1/games/votes?universeIds=$ids").optJSONArray("data").objects().associate { it.optLong("id") to (it.optLong("upVotes") to it.optLong("downVotes")) } }.getOrDefault(emptyMap())
+        return games.map { it.copy(players = playing[it.universeId] ?: 0, up = votes[it.universeId]?.first ?: 0, down = votes[it.universeId]?.second ?: 0) }.withIcons()
+    }
+
+    /** Best-effort: experience events of the group's games (the endpoint is not documented). */
+    suspend fun groupEvents(groupId: Long): List<Entry> {
+        val out = mutableListOf<Entry>()
+        for (g in groupGames(groupId).take(8)) {
+            val j = runCatching { get("https://apis.roblox.com/virtual-events/v1/universes/${g.universeId}/virtual-events") }.getOrNull() ?: continue
+            for (e in (j.optJSONArray("data") ?: j.optJSONArray("virtualEvents")).objects()) {
+                val start = e.optJSONObject("eventTime")?.optString("startUtc").orEmpty().ifEmpty { e.optString("startUtc") }
+                out += Entry(e.optLong("id"), e.optString("title").ifEmpty { e.optString("displayTitle") }, start.take(16).replace('T', ' ') + " · " + g.name, g.icon, "https://www.roblox.com/games/${g.placeId}")
+            }
+        }
+        return out
+    }
+
+    suspend fun affiliates(groupId: Long, kind: String): List<Entry> {
+        val j = get("https://groups.roblox.com/v1/groups/$groupId/relationships/$kind?model.startRowIndex=0&model.maxRows=50")
+        val rows = j.optJSONArray("relatedGroups").objects()
+        val icons = runCatching {
+            get("https://thumbnails.roblox.com/v1/groups/icons?groupIds=${rows.map { it.optLong("id") }.joinToString(",")}&size=150x150&format=Png&isCircular=false")
+                .optJSONArray("data").objects().associate { it.optLong("targetId") to it.optString("imageUrl") }
+        }.getOrDefault(emptyMap())
+        return rows.map { Entry(it.optLong("id"), it.optString("name"), it.optLong("memberCount").toString() + " members", icons[it.optLong("id")], "") }
+    }
+
+    suspend fun joinGroup(groupId: Long, cookie: String) { request("https://groups.roblox.com/v1/groups/$groupId/users", "POST", cookie, "{}") }
+    suspend fun leaveGroup(groupId: Long, userId: Long, cookie: String) { request("https://groups.roblox.com/v1/groups/$groupId/users/$userId", "DELETE", cookie, null) }
+
+    suspend fun isPremium(userId: Long, cookie: String?): Boolean =
+        request("https://premiumfeatures.roblox.com/v1/users/$userId/validate-membership", "GET", cookie).trim().equals("true", true)
+
+    // ---------------- inventory by category ----------------
+
+    suspend fun inventory(userId: Long, typeId: Int, cookie: String?): List<Entry> {
+        val rows = get("https://inventory.roblox.com/v2/users/$userId/inventory/$typeId?limit=50&sortOrder=Desc", cookie).optJSONArray("data").objects()
+        val th = assetThumbs(rows.map { it.optLong("assetId") })
+        return rows.map {
+            val id = it.optLong("assetId")
+            Entry(id, it.optString("assetName").ifEmpty { it.optString("name") }, it.optString("created").take(10), th[id], "https://www.roblox.com/catalog/$id")
+        }
+    }
 }

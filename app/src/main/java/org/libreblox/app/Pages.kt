@@ -420,7 +420,7 @@ private fun OrderPanel(title: String, order: MutableList<String>, hidden: Mutabl
 // ---------------- native lists (favorites, communities, inventory, trades, marketplace) ----------------
 
 @Composable
-private fun ItemList(items: List<Entry>) {
+private fun ItemList(items: List<Entry>, onItem: ((Entry) -> Unit)? = null) {
     val ctx = LocalContext.current
     if (items.isEmpty()) { Centered { Text(stringResource(R.string.no_results), color = MaterialTheme.colorScheme.onSurfaceVariant) }; return }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
@@ -433,7 +433,7 @@ private fun ItemList(items: List<Entry>) {
                     AsyncImage(it.image, null, Modifier.size(56.dp).clip(RoundedCornerShape(14.dp)), contentScale = ContentScale.Crop)
                 },
                 colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
-                modifier = Modifier.clickable { openWeb(ctx, it.url) },
+                modifier = Modifier.clickable { if (onItem != null) onItem(it) else openWeb(ctx, it.url) },
             )
             HorizontalDivider(Modifier.padding(start = 88.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh)
         }
@@ -441,7 +441,7 @@ private fun ItemList(items: List<Entry>) {
 }
 
 @Composable
-fun ListLoadScreen(title: String, vm: AppVm, onBack: () -> Unit, userId: Long? = null, load: suspend (userId: Long, cookie: String) -> List<Entry>) {
+fun ListLoadScreen(title: String, vm: AppVm, onBack: () -> Unit, userId: Long? = null, onItem: ((Entry) -> Unit)? = null, load: suspend (userId: Long, cookie: String) -> List<Entry>) {
     val me = vm.account
     val uid = userId ?: me?.id ?: 0L
     val (state, reload) = rememberLoad(uid) { load(uid, vm.cookie() ?: "") }
@@ -449,7 +449,7 @@ fun ListLoadScreen(title: String, vm: AppVm, onBack: () -> Unit, userId: Long? =
         Box(m) {
             if (me == null && userId == null) NeedLogin { vm.stack.add(Screen.LoginS) }
             else when (val s = state) {
-                is Load.Ok -> ItemList(s.v)
+                is Load.Ok -> ItemList(s.v, onItem)
                 is Load.Err -> ErrorBox(s.msg, reload)
                 else -> Centered { CircularProgressIndicator() }
             }

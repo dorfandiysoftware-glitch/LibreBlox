@@ -168,8 +168,10 @@ private fun Root(vm: AppVm, cfg: Cfg) {
     when (top) {
         is Screen.GameS -> GameScreen(top.game, pop, onUser = { push(Screen.UserS(it)) })
         is Screen.UserS -> UserScreen(vm, top.id, pop, onGame = { push(Screen.GameS(it)) }, onUser = { push(Screen.UserS(it.id)) },
-            onChat = { push(Screen.ChatS(it)) }, onInventory = { push(Screen.UserInvS(top.id)) }, onFavorites = { push(Screen.UserFavS(top.id)) })
-        is Screen.UserInvS -> UserInventoryScreen(vm, top.id, pop)
+            onChat = { push(Screen.ChatS(it)) }, onInventory = { push(Screen.UserInvS(top.id)) }, onFavorites = { push(Screen.UserFavS(top.id)) }, onGroup = { push(Screen.GroupS(it)) })
+        is Screen.UserInvS -> InventoryScreen(vm, top.id, pop)
+        is Screen.GroupS -> GroupScreen(vm, top.id, pop, onUser = { push(Screen.UserS(it)) }, onGame = { push(Screen.GameS(it)) }, onGroup = { push(Screen.GroupS(it)) }, onMembers = { push(Screen.MembersS(top.id, it)) })
+        is Screen.MembersS -> MembersScreen(top.id, top.name, pop) { push(Screen.UserS(it)) }
         is Screen.UserFavS -> UserFavoritesScreen(vm, top.id, pop) { push(Screen.GameS(it)) }
         is Screen.ChatS -> ChatScreen(vm, top.convo, pop)
         Screen.LoginS -> LoginScreen(pop, onDone = { pop(); vm.refreshAccount() })
@@ -181,8 +183,8 @@ private fun Root(vm: AppVm, cfg: Cfg) {
         Screen.AddFriendsS -> AddFriendsScreen(vm, pop) { push(Screen.UserS(it)) }
         Screen.NewChatS -> NewChatScreen(vm, pop)
         Screen.FavoritesS -> FavoritesScreen(vm, pop) { push(Screen.GameS(it)) }
-        Screen.CommunitiesS -> ListLoadScreen(stringResource(R.string.drawer_communities), vm, pop) { id, c -> Api.groups(id, c) }
-        Screen.InventoryS -> ListLoadScreen(stringResource(R.string.drawer_inventory), vm, pop) { id, c -> Api.collectibles(id, c) }
+        Screen.CommunitiesS -> ListLoadScreen(stringResource(R.string.drawer_communities), vm, pop, onItem = { push(Screen.GroupS(it.id)) }) { id, c -> Api.groups(id, c) }
+        Screen.InventoryS -> InventoryScreen(vm, null, pop)
         Screen.TradesS -> TradesScreen(vm, pop)
         Screen.MarketS -> MarketScreen(pop)
         null -> {

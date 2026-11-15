@@ -76,9 +76,9 @@ private fun EntryCard(e: Entry, onClick: () -> Unit) {
 }
 
 @Composable
-private fun EntryRow(items: List<Entry>) {
+private fun EntryRow(items: List<Entry>, onItem: ((Entry) -> Unit)? = null) {
     val ctx = LocalContext.current
-    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) { items(items) { e -> EntryCard(e) { openWeb(ctx, e.url) } } }
+    LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) { items(items) { e -> EntryCard(e) { if (onItem != null) onItem(e) else openWeb(ctx, e.url) } } }
 }
 
 private enum class Confirm { UNFRIEND, BLOCK }
@@ -87,7 +87,7 @@ private enum class Confirm { UNFRIEND, BLOCK }
 @Composable
 fun UserScreen(
     vm: AppVm, id: Long, onBack: () -> Unit, onGame: (Game) -> Unit, onUser: (User) -> Unit,
-    onChat: (Convo) -> Unit, onInventory: () -> Unit, onFavorites: () -> Unit,
+    onChat: (Convo) -> Unit, onInventory: () -> Unit, onFavorites: () -> Unit, onGroup: (Long) -> Unit,
 ) {
     val ctx = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -132,7 +132,8 @@ fun UserScreen(
                             AsyncImage(d.headshot, null, Modifier.size(72.dp).clip(CircleShape).background(MaterialTheme.colorScheme.surfaceContainerHigh), contentScale = ContentScale.Crop)
                             Spacer(Modifier.width(14.dp))
                             Column {
-                                Text(d.user.display, style = MaterialTheme.typography.headlineSmall)
+                                val (prem, _) = rememberLoad(id to "prem") { runCatching { Api.isPremium(id, cookie) }.getOrDefault(false) }
+                                NameLine(d.user.display, d.user.verified, (prem as? Load.Ok)?.v == true, MaterialTheme.typography.headlineSmall)
                                 Text("@${d.user.name}", color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 val p = presence
                                 if (p != null && p.type > 0) Row(verticalAlignment = Alignment.CenterVertically) {
@@ -173,7 +174,7 @@ fun UserScreen(
                             if (!own) FilledTonalButton({
                                 act("") { c -> onChat(Convo(Api.newConversation(id, c), d.user.display, false, d.headshot)) }
                             }) { Text(stringResource(R.string.prof_chat)) }
-                            if (own) FilledTonalButton({ openWeb(ctx, "https://www.roblox.com/my/account#!/info") }) { Text(stringResource(R.string.change_display)) }
+                            if (own) FilledTonalButton({}) { Text(stringResource(R.string.change_display)) }
                             if (!own) {
                                 val f = following
                                 FilledTonalButton({
@@ -213,7 +214,7 @@ fun UserScreen(
                                 }
                             }
                         }
-                        Section(stringResource(R.string.drawer_communities), id to "groups", { Api.groups(id, cookie) }) { EntryRow(it) }
+                        Section(stringResource(R.string.drawer_communities), id to "groups", { Api.groups(id, cookie) }) { gl -> EntryRow(gl) { onGroup(it.id) } }
                         Section(stringResource(R.string.badges_title), id to "badges", { Api.badges(id) }) { EntryRow(it) }
                         if (d.games.isNotEmpty()) {
                             Text(stringResource(R.string.user_games), style = MaterialTheme.typography.titleMedium)
@@ -261,6 +262,3 @@ fun UserFavoritesScreen(vm: AppVm, id: Long, onBack: () -> Unit, onGame: (Game) 
     }
 }
 
-@Composable
-fun UserInventoryScreen(vm: AppVm, id: Long, onBack: () -> Unit) =
-    ListLoadScreen(stringResource(R.string.drawer_inventory), vm, onBack, userId = id) { uid, c -> Api.collectibles(uid, c) }
