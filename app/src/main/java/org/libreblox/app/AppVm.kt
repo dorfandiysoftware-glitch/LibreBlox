@@ -29,6 +29,11 @@ sealed interface Screen {
     data object FriendsS : Screen
     data object AddFriendsS : Screen
     data object NewChatS : Screen
+    data object FavoritesS : Screen
+    data object CommunitiesS : Screen
+    data object InventoryS : Screen
+    data object TradesS : Screen
+    data object MarketS : Screen
 }
 
 class AppVm(private val app: Application) : AndroidViewModel(app) {

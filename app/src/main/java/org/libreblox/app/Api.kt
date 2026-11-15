@@ -39,6 +39,8 @@ data class GameDetails(
     val shots: List<String>,
 )
 
+data class Entry(val id: Long, val title: String, val subtitle: String, val image: String?, val url: String)
+
 data class Sort(val id: String, val title: String)
 
 data class User(val id: Long, val name: String, val display: String, val verified: Boolean = false, val avatar: String? = null)
@@ -316,15 +318,19 @@ object Api {
         val raw = (j.optJSONArray("conversations") ?: JSONArray()).objects()
         // Some responses wrap each entry as {"conversation": {...}}.
         val arr = raw.map { it.optJSONObject("conversation") ?: it }
-        arr.firstOrNull { idOf(it).isEmpty() }?.let { throw Exception("Unexpected chat format, keys: " + it.keys().asSequence().toList()) }
+        val good = arr.filter { idOf(it).isNotEmpty() }
+        if (arr.isNotEmpty() && good.isEmpty()) {
+            val f = arr.first()
+            throw Exception("Unexpected chat format: " + f.keys().asSequence().joinToString { k -> k + "=" + f.opt(k).toString().take(40) })
+        }
         fun others(c: JSONObject): List<Long> {
             val a = c.optJSONArray("participant_user_ids") ?: return emptyList()
             return (0 until a.length()).map { a.optLong(it) }.filter { it != myId && it != 0L }
         }
-        val allIds = arr.flatMap { others(it) }.distinct()
+        val allIds = good.flatMap { others(it) }.distinct()
         val users = usersByIds(allIds).associateBy { it.id }
-        val avatars = headshots(arr.mapNotNull { others(it).firstOrNull() }.distinct().take(100))
-        return arr.map { c ->
+        val avatars = headshots(good.mapNotNull { others(it).firstOrNull() }.distinct().take(100))
+        return good.map { c ->
             val o = others(c)
             val title = c.optString("name").takeIf { it.isNotEmpty() && it != "null" }
                 ?: o.mapNotNull { users[it]?.display }.joinToString(", ").ifEmpty { "Chat" }
@@ -368,5 +374,69 @@ object Api {
         val j = JSONObject(request("$CHAT/create-conversations", "POST", cookie, body))
         val c = (j.optJSONArray("conversations") ?: JSONArray()).objects().firstOrNull() ?: throw Exception("No conversation returned")
         return idOf(c.optJSONObject("conversation") ?: c).ifEmpty { throw Exception("No conversation id: " + c.keys().asSequence().toList()) }
+    }
+    // ---------------- lists: favorites, communities, inventory, trades, catalog ----------------
+
+    private suspend fun assetThumbs(ids: List<Long>): Map<Long, String> {
+        if (ids.isEmpty()) return emptyMap()
+        val j = runCatching {
+            get("https://thumbnails.roblox.com/v1/assets?assetIds=${ids.distinct().take(100).joinToString(",")}&size=150x150&format=Png&isCircular=false")
+        }.getOrNull() ?: return emptyMap()
+        return j.optJSONArray("data").objects().mapNotNull {
+            val u = it.optString("imageUrl"); if (u.isNotEmpty()) it.optLong("targetId") to u else null
+        }.toMap()
+    }
+
+    suspend fun favoriteGames(userId: Long, cookie: String?): List<Game> {
+        val j = get("https://games.roblox.com/v2/users/$userId/favorite/games?limit=50&sortOrder=Desc", cookie)
+        return j.optJSONArray("data").objects().map {
+            Game(it.optLong("id"), it.optJSONObject("rootPlace")?.optLong("id") ?: 0L, it.optString("name"), it.optLong("playing"))
+        }.filter { it.universeId != 0L }.withIcons()
+    }
+
+    suspend fun groups(userId: Long, cookie: String?): List<Entry> {
+        val j = get("https://groups.roblox.com/v1/users/$userId/groups/roles?includeLocked=false", cookie)
+        val rows = j.optJSONArray("data").objects()
+        val icons = runCatching {
+            get("https://thumbnails.roblox.com/v1/groups/icons?groupIds=${rows.mapNotNull { it.optJSONObject("group")?.optLong("id") }.take(100).joinToString(",")}&size=150x150&format=Png&isCircular=false")
+                .optJSONArray("data").objects().associate { it.optLong("targetId") to it.optString("imageUrl") }
+        }.getOrDefault(emptyMap())
+        return rows.mapNotNull {
+            val g = it.optJSONObject("group") ?: return@mapNotNull null
+            Entry(g.optLong("id"), g.optString("name"), (it.optJSONObject("role")?.optString("name") ?: "") + " · " + g.optLong("memberCount") + " members",
+                icons[g.optLong("id")], "https://www.roblox.com/communities/${g.optLong("id")}")
+        }
+    }
+
+    suspend fun collectibles(userId: Long, cookie: String?): List<Entry> {
+        val j = get("https://inventory.roblox.com/v1/users/$userId/assets/collectibles?sortOrder=Desc&limit=50", cookie)
+        val rows = j.optJSONArray("data").objects()
+        val th = assetThumbs(rows.map { it.optLong("assetId") })
+        return rows.map {
+            val id = it.optLong("assetId")
+            Entry(id, it.optString("name"), if (it.has("recentAveragePrice")) "RAP ${it.optLong("recentAveragePrice")}" else "", th[id], "https://www.roblox.com/catalog/$id")
+        }
+    }
+
+    suspend fun trades(kind: String, cookie: String): List<Entry> {
+        val j = get("https://trades.roblox.com/v1/trades/$kind?limit=25&sortOrder=Desc", cookie)
+        return j.optJSONArray("data").objects().map {
+            val u = it.optJSONObject("user")
+            Entry(it.optLong("id"), u?.optString("displayName") ?: u?.optString("name") ?: "Trade", it.optString("status") + " · " + it.optString("created").take(10), null,
+                "https://www.roblox.com/trades")
+        }
+    }
+
+    suspend fun catalog(query: String): List<Entry> {
+        val j = get("https://catalog.roblox.com/v1/search/items/details?Keyword=${enc(query)}&Limit=30&SortType=0")
+        val rows = j.optJSONArray("data").objects()
+        val th = assetThumbs(rows.filter { it.optString("itemType").equals("Asset", true) }.map { it.optLong("id") })
+        return rows.map {
+            val id = it.optLong("id")
+            val price = if (it.has("price")) "R$ ${it.optLong("price")}" else if (it.optBoolean("priceStatus")) "" else "Free / off-sale"
+            val bundle = it.optString("itemType").equals("Bundle", true)
+            Entry(id, it.optString("name"), listOf(it.optString("creatorName"), price).filter { x -> x.isNotEmpty() }.joinToString(" · "), th[id],
+                "https://www.roblox.com/" + (if (bundle) "bundles/" else "catalog/") + id)
+        }
     }
 }

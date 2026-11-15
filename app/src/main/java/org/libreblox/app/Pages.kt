@@ -33,6 +33,9 @@ import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.ListItemDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -227,7 +230,7 @@ fun MeTab(vm: AppVm, modifier: Modifier, onLogin: () -> Unit, onProfile: () -> U
             }
             Panel {
                 Text(stringResource(R.string.me_web_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                FilledTonalButton({ openWeb(ctx, "https://www.roblox.com/catalog") }, Modifier.fillMaxWidth()) { Text(stringResource(R.string.me_market)) }
+                FilledTonalButton({ vm.stack.add(Screen.MarketS) }, Modifier.fillMaxWidth()) { Text(stringResource(R.string.me_market)) }
                 FilledTonalButton({ openWeb(ctx, "https://www.roblox.com/my/avatar") }, Modifier.fillMaxWidth()) { Text(stringResource(R.string.me_avatar)) }
             }
         }
@@ -407,6 +410,106 @@ private fun BootstrapperPage() {
             }) { Text(stringResource(R.string.bootstrapper_open)) }
         } else {
             Button({ openWeb(ctx, "https://github.com/dorfandiysoftware-glitch/dorfikstrap/releases") }) { Text(stringResource(R.string.bootstrapper_get)) }
+        }
+    }
+}
+
+
+// ---------------- native lists (favorites, communities, inventory, trades, marketplace) ----------------
+
+@Composable
+private fun ItemList(items: List<Entry>) {
+    val ctx = LocalContext.current
+    if (items.isEmpty()) { Centered { Text(stringResource(R.string.no_results), color = MaterialTheme.colorScheme.onSurfaceVariant) }; return }
+    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 8.dp)) {
+        items(items.size) { i ->
+            val it = items[i]
+            ListItem(
+                headlineContent = { Text(it.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                supportingContent = if (it.subtitle.isNotBlank()) ({ Text(it.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis) }) else null,
+                leadingContent = {
+                    AsyncImage(it.image, null, Modifier.size(56.dp).clip(RoundedCornerShape(14.dp)), contentScale = ContentScale.Crop)
+                },
+                colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                modifier = Modifier.clickable { openWeb(ctx, it.url) },
+            )
+            HorizontalDivider(Modifier.padding(start = 88.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh)
+        }
+    }
+}
+
+@Composable
+fun ListLoadScreen(title: String, vm: AppVm, onBack: () -> Unit, load: suspend (userId: Long, cookie: String) -> List<Entry>) {
+    val me = vm.account
+    val (state, reload) = rememberLoad(me?.id ?: 0L) { load(me?.id ?: 0L, vm.cookie() ?: "") }
+    DetailScaffold(title, onBack) { m ->
+        Box(m) {
+            if (me == null) NeedLogin { vm.stack.add(Screen.LoginS) }
+            else when (val s = state) {
+                is Load.Ok -> ItemList(s.v)
+                is Load.Err -> ErrorBox(s.msg, reload)
+                else -> Centered { CircularProgressIndicator() }
+            }
+        }
+    }
+}
+
+@Composable
+fun FavoritesScreen(vm: AppVm, onBack: () -> Unit, onGame: (Game) -> Unit) {
+    val me = vm.account
+    val (state, reload) = rememberLoad(me?.id ?: 0L) { Api.favoriteGames(me?.id ?: 0L, vm.cookie()) }
+    DetailScaffold(stringResource(R.string.drawer_favorites), onBack) { m ->
+        Box(m) {
+            if (me == null) NeedLogin { vm.stack.add(Screen.LoginS) }
+            else when (val s = state) {
+                is Load.Ok -> if (s.v.isEmpty()) Centered { Text(stringResource(R.string.no_results)) } else GameGrid(s.v, onGame = onGame)
+                is Load.Err -> ErrorBox(s.msg, reload)
+                else -> Centered { CircularProgressIndicator() }
+            }
+        }
+    }
+}
+
+@Composable
+fun MarketScreen(onBack: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    var query by remember { mutableStateOf("") }
+    var res by remember { mutableStateOf<Load<List<Entry>>>(Load.Idle) }
+    fun go() {
+        val q = query.trim(); if (q.isEmpty()) return
+        res = Load.Busy
+        scope.launch { res = try { Load.Ok(Api.catalog(q)) } catch (e: Exception) { Load.Err(e.message ?: "") } }
+    }
+    DetailScaffold(stringResource(R.string.me_market), onBack) { m ->
+        Column(m.fillMaxSize()) {
+            SearchField(query, stringResource(R.string.market_hint), { query = it }, ::go, Modifier.padding(16.dp, 8.dp))
+            when (val s = res) {
+                Load.Idle -> Centered { Text(stringResource(R.string.market_hint), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                Load.Busy -> Centered { CircularProgressIndicator() }
+                is Load.Err -> ErrorBox(s.msg, ::go)
+                is Load.Ok -> ItemList(s.v)
+            }
+        }
+    }
+}
+
+@Composable
+fun TradesScreen(vm: AppVm, onBack: () -> Unit) {
+    var kind by remember { mutableStateOf("Inbound") }
+    val (state, reload) = rememberLoad(kind to vm.account?.id) { Api.trades(kind, vm.cookie() ?: "") }
+    DetailScaffold(stringResource(R.string.drawer_trades), onBack) { m ->
+        Column(m.fillMaxSize()) {
+            Row(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf("Inbound", "Outbound", "Completed").forEach { k -> FilterChip(kind == k, { kind = k }, { Text(k) }) }
+            }
+            Box(Modifier.fillMaxSize()) {
+                if (vm.account == null) NeedLogin { vm.stack.add(Screen.LoginS) }
+                else when (val s = state) {
+                    is Load.Ok -> ItemList(s.v)
+                    is Load.Err -> ErrorBox(s.msg, reload)
+                    else -> Centered { CircularProgressIndicator() }
+                }
+            }
         }
     }
 }

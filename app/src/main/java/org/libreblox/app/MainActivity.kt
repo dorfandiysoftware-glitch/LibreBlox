@@ -23,6 +23,20 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AccountCircle
+import androidx.compose.material.icons.filled.Build
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.ExitToApp
+import androidx.compose.material.icons.filled.Face
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Create
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Menu
@@ -43,7 +57,7 @@ import androidx.compose.material3.NavigationDrawerItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
+import androidx.compose.material3.PrimaryTabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
@@ -152,6 +166,11 @@ private fun Root(vm: AppVm, cfg: Cfg) {
         Screen.FriendsS -> FriendsScreen(vm, pop, { push(Screen.UserS(it)) }, { login() })
         Screen.AddFriendsS -> AddFriendsScreen(vm, pop) { push(Screen.UserS(it)) }
         Screen.NewChatS -> NewChatScreen(vm, pop)
+        Screen.FavoritesS -> FavoritesScreen(vm, pop) { push(Screen.GameS(it)) }
+        Screen.CommunitiesS -> ListLoadScreen(stringResource(R.string.drawer_communities), vm, pop) { id, c -> Api.groups(id, c) }
+        Screen.InventoryS -> ListLoadScreen(stringResource(R.string.drawer_inventory), vm, pop) { id, c -> Api.collectibles(id, c) }
+        Screen.TradesS -> TradesScreen(vm, pop)
+        Screen.MarketS -> MarketScreen(pop)
         null -> {
             fun go(id: String) {
                 tap()
@@ -163,10 +182,10 @@ private fun Root(vm: AppVm, cfg: Cfg) {
                     "messages" -> tab = "chat"
                     "switch" -> showSwitch = true
                     "logout" -> vm.logout()
-                    "favorites" -> openWeb(ctx, "https://www.roblox.com/discover/#/sortName/v2/Favorites")
-                    "communities" -> openWeb(ctx, "https://www.roblox.com/communities")
-                    "inventory" -> openWeb(ctx, "https://www.roblox.com/users/${vm.account?.id ?: 0}/inventory")
-                    "trades" -> openWeb(ctx, "https://www.roblox.com/trades")
+                    "favorites" -> push(Screen.FavoritesS)
+                    "communities" -> push(Screen.CommunitiesS)
+                    "inventory" -> push(Screen.InventoryS)
+                    "trades" -> push(Screen.TradesS)
                     "help" -> openWeb(ctx, "https://en.help.roblox.com/")
                     "learn" -> openWeb(ctx, "https://create.roblox.com/docs")
                     "create" -> openWeb(ctx, "https://create.roblox.com/")
@@ -194,6 +213,7 @@ private fun Root(vm: AppVm, cfg: Cfg) {
                                 if (me == null && id in listOf("switch", "logout", "inventory", "trades")) return@forEach
                                 NavigationDrawerItem(
                                     label = { Text(stringResource(drawerLabel(id))) }, selected = false, onClick = { go(id) },
+                                    icon = { Icon(drawerIcon(id), null) },
                                     modifier = Modifier.padding(horizontal = 12.dp),
                                 )
                             }
@@ -238,7 +258,7 @@ private fun Root(vm: AppVm, cfg: Cfg) {
                     val m = Modifier.padding(pad)
                     when (if (tab in cfg.navOrder && tab !in cfg.navHidden) tab else cfg.navOrder.first { it !in cfg.navHidden }) {
                         "home" -> Column(m) {
-                            TabRow(homeTab) {
+                            PrimaryTabRow(homeTab, containerColor = MaterialTheme.colorScheme.background) {
                                 Tab(homeTab == 0, { homeTab = 0 }, text = { Text(stringResource(R.string.for_you)) })
                                 Tab(homeTab == 1, { homeTab = 1 }, text = { Text(stringResource(R.string.charts)) })
                             }
@@ -275,4 +295,20 @@ private fun Root(vm: AppVm, cfg: Cfg) {
             dismissButton = { TextButton({ showSwitch = false }) { Text(stringResource(R.string.cancel)) } },
         )
     }
+}
+
+private fun drawerIcon(id: String): ImageVector = when (id) {
+    "favorites" -> Icons.Default.Favorite
+    "continue" -> Icons.Default.PlayArrow
+    "friends" -> Icons.Default.Face
+    "communities" -> Icons.Default.Share
+    "inventory" -> Icons.Default.List
+    "trades" -> Icons.Default.DateRange
+    "messages" -> Icons.Default.Email
+    "settings" -> Icons.Default.Settings
+    "help" -> Icons.Default.Info
+    "learn" -> Icons.Default.Star
+    "create" -> Icons.Default.Create
+    "switch" -> Icons.Default.AccountCircle
+    else -> Icons.Default.ExitToApp
 }

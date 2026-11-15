@@ -122,4 +122,5 @@
     <string name="charts">Чарти</string>
     <string name="add_account">Додати акаунт</string>
     <string name="cancel">Скасувати</string>
+    <string name="market_hint">Пошук у маркетплейсі</string>
 </resources>
