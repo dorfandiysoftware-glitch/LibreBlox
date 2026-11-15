@@ -261,58 +261,6 @@ fun GameScreen(base: Game, onBack: () -> Unit, onUser: (Long) -> Unit) {
     }
 }
 
-@Composable
-fun UserScreen(id: Long, onBack: () -> Unit, onGame: (Game) -> Unit, onUser: (User) -> Unit) {
-    val ctx = LocalContext.current
-    val (load, retry) = rememberLoad(id) { Api.userDetails(id) }
-    val title = (load as? Load.Ok)?.v?.user?.display ?: ""
-    DetailScaffold(title, onBack) { m ->
-        when (val l = load) {
-            Load.Idle, Load.Busy -> Box(m) { Centered { CircularProgressIndicator() } }
-            is Load.Err -> Box(m) { ErrorBox(l.msg, retry) }
-            is Load.Ok -> {
-                val d = l.v
-                Column(m.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                    Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-                        AsyncImage(d.bigAvatar, null, Modifier.size(160.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-                        Spacer(Modifier.height(8.dp))
-                        Text(d.user.display, style = MaterialTheme.typography.headlineSmall)
-                        Text("@${d.user.name}", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (d.created.isNotEmpty()) Text(stringResource(R.string.joined_fmt, d.created), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        if (d.banned) Text(stringResource(R.string.banned), color = MaterialTheme.colorScheme.error)
-                    }
-                    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer), shape = RoundedCornerShape(20.dp)) {
-                        Row(Modifier.fillMaxWidth().padding(vertical = 14.dp)) {
-                            Stat(stringResource(R.string.friends), compact(d.friends), Modifier.weight(1f))
-                            Stat(stringResource(R.string.followers), compact(d.followers), Modifier.weight(1f))
-                            Stat(stringResource(R.string.following), compact(d.following), Modifier.weight(1f))
-                        }
-                    }
-                    if (d.description.isNotBlank()) Text(d.description, style = MaterialTheme.typography.bodyMedium)
-                    if (d.games.isNotEmpty()) {
-                        Text(stringResource(R.string.user_games), style = MaterialTheme.typography.titleMedium)
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                            items(d.games, key = { it.universeId }) { g -> Box(Modifier.width(140.dp)) { GameCard(g) { onGame(g) } } }
-                        }
-                    }
-                    if (d.friendList.isNotEmpty()) {
-                        Text(stringResource(R.string.friends_list), style = MaterialTheme.typography.titleMedium)
-                        LazyRow(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                            items(d.friendList, key = { it.id }) { f ->
-                                Column(Modifier.width(76.dp).clickable { onUser(f) }, horizontalAlignment = Alignment.CenterHorizontally) {
-                                    AsyncImage(f.avatar, null, Modifier.size(64.dp).clip(CircleShape), contentScale = ContentScale.Crop)
-                                    Text(f.display, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
-                                }
-                            }
-                        }
-                    }
-                    TextButton({ openWeb(ctx, "https://www.roblox.com/users/${d.user.id}/profile") }) { Text(stringResource(R.string.open_web)) }
-                }
-            }
-        }
-    }
-}
-
 // ---------------- login ----------------
 
 @android.annotation.SuppressLint("SetJavaScriptEnabled")

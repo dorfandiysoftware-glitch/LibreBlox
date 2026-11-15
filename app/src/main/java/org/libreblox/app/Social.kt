@@ -101,7 +101,7 @@ fun PresenceAvatar(f: Friend, size: Int, onClick: () -> Unit) {
         if (t > 0) Box(
             Modifier.size((size / 4).dp).align(Alignment.BottomEnd)
                 .background(MaterialTheme.colorScheme.background, CircleShape).padding(2.dp)
-                .background(if (t == 1) PresenceBlue else PresenceGreen, CircleShape),
+                .background(if (t == 3) PresenceBlue else PresenceGreen, CircleShape),
         )
     }
 }
@@ -141,9 +141,10 @@ fun HomeTab(
                 SectionHeader(stringResource(R.string.friends_count_fmt, fr.v.size))
                 LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                     items(fr.v) { f ->
-                        Column(Modifier.width(68.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        Column(Modifier.width(76.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                             PresenceAvatar(f, 64) { onUser(f.user.id) }
                             Text(f.user.display, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 4.dp))
+                            if (f.presence?.type == 2 && f.presence.location.isNotEmpty()) Text(f.presence.location, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall, color = RobloxGreen)
                         }
                     }
                 }

@@ -54,6 +54,7 @@ data class UserDetails(
     val followers: Long,
     val following: Long,
     val bigAvatar: String?,
+    val headshot: String?,
     val friendList: List<User>,
     val games: List<Game>,
 )
@@ -252,6 +253,7 @@ object Api {
                     .optJSONArray("data").objects().firstOrNull()?.optString("imageUrl")?.ifEmpty { null }
             }.getOrNull()
         }
+        val head = async { headshots(listOf(id))[id] }
         val friends = async {
             runCatching {
                 val ids = friendIds(get("https://friends.roblox.com/v1/users/$id/friends")).take(30)
@@ -280,6 +282,7 @@ object Api {
             followers = nFollowers.await(),
             following = nFollowing.await(),
             bigAvatar = bigUrl,
+            headshot = head.await(),
             friendList = friends.await(),
             games = games.await(),
         )
@@ -453,4 +456,60 @@ object Api {
                 "https://www.roblox.com/" + (if (bundle) "bundles/" else "catalog/") + id)
         }
     }
+    // ---------------- profile sections ----------------
+
+    suspend fun usernameHistory(id: Long): List<String> =
+        get("https://users.roblox.com/v1/users/$id/username-history?limit=25&sortOrder=Desc").optJSONArray("data").objects().map { it.optString("name") }.filter { it.isNotEmpty() }
+
+    /** Social links the user shows on the profile: (label, url). */
+    suspend fun socials(id: Long, cookie: String?): List<Pair<String, String>> {
+        val j = get("https://accountinformation.roblox.com/v1/users/$id/promotion-channels", cookie)
+        fun link(key: String, base: String): Pair<String, String>? {
+            val v = j.optString(key).takeIf { it.isNotBlank() && it != "null" } ?: return null
+            return key.replaceFirstChar { it.uppercase() } to (if (v.startsWith("http")) v else base + v.trimStart('@'))
+        }
+        return listOfNotNull(
+            link("twitter", "https://x.com/"), link("youtube", "https://youtube.com/"), link("twitch", "https://twitch.tv/"),
+            link("facebook", "https://facebook.com/"), link("guilded", "https://guilded.gg/"),
+        )
+    }
+
+    suspend fun wearing(id: Long): List<Entry> {
+        val ids = get("https://avatar.roblox.com/v1/users/$id/currently-wearing").optJSONArray("assetIds")
+            ?.let { a -> (0 until a.length()).map { a.optLong(it) } } ?: return emptyList()
+        if (ids.isEmpty()) return emptyList()
+        val body = JSONObject().put("items", JSONArray().also { a -> ids.take(50).forEach { a.put(JSONObject().put("itemType", "Asset").put("id", it)) } }).toString()
+        val rows = runCatching { JSONObject(request("https://catalog.roblox.com/v1/catalog/items/details", "POST", null, body)).optJSONArray("data").objects() }.getOrDefault(emptyList())
+        val th = assetThumbs(ids)
+        val byId = rows.associateBy { it.optLong("id") }
+        return ids.map { aid ->
+            val r = byId[aid]
+            val price = when {
+                r == null -> ""
+                r.has("price") -> "R$ ${r.optLong("price")}"
+                r.optString("priceStatus").isNotEmpty() -> r.optString("priceStatus")
+                else -> ""
+            }
+            Entry(aid, r?.optString("name") ?: "#$aid", price, th[aid], "https://www.roblox.com/catalog/$aid")
+        }
+    }
+
+    suspend fun badges(id: Long): List<Entry> {
+        val rows = get("https://badges.roblox.com/v1/users/$id/badges?limit=12&sortOrder=Desc").optJSONArray("data").objects()
+        val icons = runCatching {
+            get("https://thumbnails.roblox.com/v1/badges/icons?badgeIds=${rows.map { it.optLong("id") }.joinToString(",")}&size=150x150&format=Png&isCircular=false")
+                .optJSONArray("data").objects().associate { it.optLong("targetId") to it.optString("imageUrl") }
+        }.getOrDefault(emptyMap())
+        return rows.map { Entry(it.optLong("id"), it.optString("name"), it.optString("description").take(80), icons[it.optLong("id")], "https://www.roblox.com/badges/${it.optLong("id")}") }
+    }
+
+    suspend fun presenceOf(id: Long, cookie: String): Presence? = presence(listOf(id), cookie)[id]
+
+    suspend fun isFollowing(id: Long, cookie: String): Boolean {
+        val body = JSONObject().put("targetUserIds", JSONArray().put(id)).toString()
+        return JSONObject(request("https://friends.roblox.com/v1/user/following-exists", "POST", cookie, body))
+            .optJSONArray("followings").objects().firstOrNull()?.optBoolean("isFollowing") ?: false
+    }
+
+    suspend fun block(userId: Long, cookie: String) { request("https://accountsettings.roblox.com/v1/users/$userId/block", "POST", cookie, "{}") }
 }

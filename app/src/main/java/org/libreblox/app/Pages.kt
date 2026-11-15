@@ -351,6 +351,8 @@ private fun CustomPage(cfg: Cfg, vm: AppVm, onDocs: () -> Unit) {
         Text(stringResource(R.string.drawer_menu), style = MaterialTheme.typography.titleMedium)
         Text(stringResource(R.string.drawer_opacity) + ": ${(cfg.drawerAlpha * 100).toInt()}%")
         Slider(cfg.drawerAlpha, { cfg.drawerAlpha = Math.round(it * 20) / 20f }, valueRange = 0.2f..1f, steps = 15, onValueChangeFinished = { cfg.save() })
+        Text(stringResource(R.string.drawer_blur) + ": ${cfg.drawerBlur.toInt()} dp")
+        Slider(cfg.drawerBlur, { cfg.drawerBlur = Math.round(it).toFloat() }, valueRange = 0f..30f, onValueChangeFinished = { cfg.save() })
         Text(stringResource(R.string.drawer_width) + ": ${cfg.drawerWidth.toInt()} dp")
         Slider(cfg.drawerWidth, { cfg.drawerWidth = Math.round(it / 10) * 10f }, valueRange = 220f..340f, steps = 11, onValueChangeFinished = { cfg.save() })
         ToggleRow(cfg, "drawer_header", R.string.show_drawer_header)
@@ -364,6 +366,10 @@ private fun CustomPage(cfg: Cfg, vm: AppVm, onDocs: () -> Unit) {
         ToggleRow(cfg, "home_friends", R.string.show_friends_strip)
         ToggleRow(cfg, "home_continue", R.string.continue_title)
         ToggleRow(cfg, "top_search", R.string.tab_search)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(stringResource(R.string.search_as_field), Modifier.weight(1f))
+            Switch(cfg.onDef("top_searchfield", false), { cfg.set("top_searchfield", it) })
+        }
         ToggleRow(cfg, "top_robux", R.string.buy_robux)
         ToggleRow(cfg, "top_messages", R.string.drawer_messages)
     }
@@ -435,12 +441,13 @@ private fun ItemList(items: List<Entry>) {
 }
 
 @Composable
-fun ListLoadScreen(title: String, vm: AppVm, onBack: () -> Unit, load: suspend (userId: Long, cookie: String) -> List<Entry>) {
+fun ListLoadScreen(title: String, vm: AppVm, onBack: () -> Unit, userId: Long? = null, load: suspend (userId: Long, cookie: String) -> List<Entry>) {
     val me = vm.account
-    val (state, reload) = rememberLoad(me?.id ?: 0L) { load(me?.id ?: 0L, vm.cookie() ?: "") }
+    val uid = userId ?: me?.id ?: 0L
+    val (state, reload) = rememberLoad(uid) { load(uid, vm.cookie() ?: "") }
     DetailScaffold(title, onBack) { m ->
         Box(m) {
-            if (me == null) NeedLogin { vm.stack.add(Screen.LoginS) }
+            if (me == null && userId == null) NeedLogin { vm.stack.add(Screen.LoginS) }
             else when (val s = state) {
                 is Load.Ok -> ItemList(s.v)
                 is Load.Err -> ErrorBox(s.msg, reload)

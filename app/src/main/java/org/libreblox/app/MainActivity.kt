@@ -83,6 +83,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedback
@@ -157,12 +158,19 @@ private fun Root(vm: AppVm, cfg: Cfg) {
     val pop = { vm.stack.removeAt(vm.stack.lastIndex); Unit }
     val push = { s: Screen -> vm.stack.add(s); Unit }
     val login = { push(Screen.LoginS) }
+    androidx.compose.runtime.LaunchedEffect(vm.account) {
+        val a = vm.account
+        if (a != null) cfg.setOwner(a.id) else if (Session.activeId(ctx) == 0L) cfg.setOwner(0L)
+    }
     BackHandler(top != null) { pop() }
     BackHandler(top == null && drawer.isOpen) { scope.launch { drawer.close() } }
 
     when (top) {
         is Screen.GameS -> GameScreen(top.game, pop, onUser = { push(Screen.UserS(it)) })
-        is Screen.UserS -> UserScreen(top.id, pop, onGame = { push(Screen.GameS(it)) }, onUser = { push(Screen.UserS(it.id)) })
+        is Screen.UserS -> UserScreen(vm, top.id, pop, onGame = { push(Screen.GameS(it)) }, onUser = { push(Screen.UserS(it.id)) },
+            onChat = { push(Screen.ChatS(it)) }, onInventory = { push(Screen.UserInvS(top.id)) }, onFavorites = { push(Screen.UserFavS(top.id)) })
+        is Screen.UserInvS -> UserInventoryScreen(vm, top.id, pop)
+        is Screen.UserFavS -> UserFavoritesScreen(vm, top.id, pop) { push(Screen.GameS(it)) }
         is Screen.ChatS -> ChatScreen(vm, top.convo, pop)
         Screen.LoginS -> LoginScreen(pop, onDone = { pop(); vm.refreshAccount() })
         Screen.SearchS -> SearchScreen(vm, pop, { push(Screen.GameS(it)) }, { push(Screen.UserS(it.id)) })
@@ -246,11 +254,26 @@ private fun Root(vm: AppVm, cfg: Cfg) {
                     }
                 },
             ) {
+                val blurDp by androidx.compose.animation.core.animateDpAsState(
+                    if (drawer.targetValue == DrawerValue.Open) cfg.drawerBlur.dp else 0.dp, label = "blur",
+                )
                 Scaffold(
+                    modifier = if (blurDp > 0.dp) Modifier.blur(blurDp) else Modifier,
                     containerColor = MaterialTheme.colorScheme.background,
                     topBar = {
                         TopAppBar(
-                            title = {},
+                            title = {
+                                if (tab == "home" && cfg.on("top_search") && cfg.onDef("top_searchfield", false)) Surface(
+                                    onClick = { tap(); push(Screen.SearchS) }, shape = RoundedCornerShape(24.dp),
+                                    color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth().height(44.dp),
+                                ) {
+                                    Row(Modifier.padding(horizontal = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                                        Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                        Spacer(Modifier.width(8.dp))
+                                        Text(stringResource(R.string.search_games), color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                                    }
+                                }
+                            },
                             navigationIcon = {
                                 if (tab == "home") IconButton({ tap(); scope.launch { drawer.open() } }) { Icon(Icons.Default.Menu, null) }
                             },
@@ -261,7 +284,7 @@ private fun Root(vm: AppVm, cfg: Cfg) {
                                         IconButton({ tap(); push(Screen.NewChatS) }) { Icon(Icons.Default.Add, null) }
                                     }
                                     "home" -> {
-                                        if (cfg.on("top_search")) IconButton({ tap(); push(Screen.SearchS) }) { Icon(Icons.Default.Search, null) }
+                                        if (cfg.on("top_search") && !cfg.onDef("top_searchfield", false)) IconButton({ tap(); push(Screen.SearchS) }) { Icon(Icons.Default.Search, null) }
                                         if (cfg.on("top_robux")) IconButton({ tap(); openWeb(ctx, "https://www.roblox.com/upgrades/robux") }) { Icon(Icons.Default.ShoppingCart, null) }
                                         if (cfg.on("top_messages")) IconButton({ tap(); tab = "chat" }) { Icon(Icons.Default.Email, null) }
                                     }

@@ -172,4 +172,19 @@
     <string name="shortcut_name">Назва ярлика</string>
     <string name="create_shortcut">Створити ярлик</string>
     <string name="no_pin_support">Ваш лаунчер не підтримує закріплені ярлики</string>
+    <string name="search_as_field">Пошук як поле (замість кнопки)</string>
+    <string name="drawer_blur">Розмиття фону за меню</string>
+    <string name="prof_chat">Чат</string>
+    <string name="follow">Стежити</string>
+    <string name="unfollow">Не стежити</string>
+    <string name="prof_inventory">Інвентар</string>
+    <string name="unfriend">Видалити з друзів</string>
+    <string name="block_user">Заблокувати</string>
+    <string name="report">Поскаржитись</string>
+    <string name="change_display">Змінити Display Name</string>
+    <string name="prev_names_fmt">Раніше: %1$s</string>
+    <string name="wearing_title">Зараз одягнено</string>
+    <string name="badges_title">Бейджі</string>
+    <string name="are_you_sure">Ви впевнені?</string>
+    <string name="action_done">Готово</string>
 </resources>

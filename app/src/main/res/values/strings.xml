@@ -172,4 +172,19 @@
     <string name="shortcut_name">Shortcut name</string>
     <string name="create_shortcut">Create shortcut</string>
     <string name="no_pin_support">Your launcher does not support pinned shortcuts</string>
+    <string name="search_as_field">Search as a field (instead of a button)</string>
+    <string name="drawer_blur">Background blur behind the menu</string>
+    <string name="prof_chat">Chat</string>
+    <string name="follow">Follow</string>
+    <string name="unfollow">Unfollow</string>
+    <string name="prof_inventory">Inventory</string>
+    <string name="unfriend">Remove friend</string>
+    <string name="block_user">Block user</string>
+    <string name="report">Report</string>
+    <string name="change_display">Change Display Name</string>
+    <string name="prev_names_fmt">Previously: %1$s</string>
+    <string name="wearing_title">Currently wearing</string>
+    <string name="badges_title">Badges</string>
+    <string name="are_you_sure">Are you sure?</string>
+    <string name="action_done">Done</string>
 </resources>

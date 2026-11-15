@@ -102,12 +102,14 @@ class Cfg(ctx: Context) {
     var drawerAlpha by mutableFloatStateOf(p.getFloat("drawer_alpha", 1f))
     var viaDorfikstrap by mutableStateOf(p.getBoolean("via_dorfikstrap", true))
     var drawerWidth by mutableFloatStateOf(p.getFloat("drawer_width", 300f))
+    var drawerBlur by mutableFloatStateOf(p.getFloat("drawer_blur", 16f))
 
     /** Show/hide switches for home blocks, top-bar buttons etc. A missing key means "shown". */
     val toggles = mutableStateMapOf<String, Boolean>().also { m ->
         try { val o = JSONObject(p.getString("toggles", "{}")); for (k in o.keys()) m[k] = o.getBoolean(k) } catch (_: Exception) {}
     }
     fun on(key: String) = toggles[key] != false
+    fun onDef(key: String, def: Boolean) = toggles[key] ?: def
     fun set(key: String, v: Boolean) { toggles[key] = v; save() }
 
     val hiddenSorts = mutableStateListOf<String>().also { it += split("hidden_sorts", emptyList()) }
@@ -125,14 +127,22 @@ class Cfg(ctx: Context) {
     }
     val drawerHidden = mutableStateListOf<String>().also { it += split("drawer_hidden", emptyList()) }
 
-    val history = mutableStateListOf<Played>().also { l ->
-        try {
-            val a = JSONArray(p.getString("history", "[]"))
-            for (i in 0 until a.length()) {
-                val o = a.getJSONObject(i)
-                l += Played(o.optLong("u"), o.optLong("p"), o.optString("n"), o.optString("i").ifEmpty { null }, o.optLong("t"))
-            }
-        } catch (_: Exception) {}
+    /** "Continue" history is kept per account (key history_<id>; the guest/legacy one is plain "history"). */
+    private var owner = try { Session.activeId(ctx) } catch (_: Exception) { 0L }
+    private fun histKey() = if (owner == 0L) "history" else "history_$owner"
+    private fun loadHistory(): List<Played> = try {
+        val a = JSONArray(p.getString(histKey(), "[]"))
+        (0 until a.length()).map { i ->
+            val o = a.getJSONObject(i)
+            Played(o.optLong("u"), o.optLong("p"), o.optString("n"), o.optString("i").ifEmpty { null }, o.optLong("t"))
+        }
+    } catch (_: Exception) { emptyList() }
+    val history = mutableStateListOf<Played>().also { it += loadHistory() }
+
+    fun setOwner(id: Long) {
+        if (id == owner) return
+        owner = id
+        history.clear(); history += loadHistory()
     }
 
     private fun split(key: String, def: List<String>): List<String> =
@@ -145,7 +155,7 @@ class Cfg(ctx: Context) {
             .putString("theme_id", themeId)
             .putString("themes", JSONArray().also { a -> customThemes.forEach { a.put(themeToJson(it)) } }.toString())
             .putFloat("text_scale", textScale).putBoolean("haptics", haptics).putFloat("drawer_alpha", drawerAlpha)
-            .putBoolean("via_dorfikstrap", viaDorfikstrap).putFloat("drawer_width", drawerWidth)
+            .putBoolean("via_dorfikstrap", viaDorfikstrap).putFloat("drawer_width", drawerWidth).putFloat("drawer_blur", drawerBlur)
             .putString("toggles", JSONObject().also { o -> toggles.forEach { (k, v) -> o.put(k, v) } }.toString())
             .putString("hidden_sorts", hiddenSorts.joinToString(",")).putString("sort_order", sortOrder.joinToString(","))
             .putString("nav_order", navOrder.joinToString(",")).putString("nav_hidden", navHidden.joinToString(","))
@@ -159,7 +169,7 @@ class Cfg(ctx: Context) {
         while (history.size > 60) history.removeAt(history.lastIndex)
         val a = JSONArray()
         history.forEach { a.put(JSONObject().put("u", it.universeId).put("p", it.placeId).put("n", it.name).put("i", it.icon ?: "").put("t", it.at)) }
-        p.edit().putString("history", a.toString()).apply()
+        p.edit().putString(histKey(), a.toString()).apply()
     }
 
     fun resetLayout() {

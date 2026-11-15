@@ -34,6 +34,8 @@ sealed interface Screen {
     data object InventoryS : Screen
     data object TradesS : Screen
     data object MarketS : Screen
+    data class UserInvS(val id: Long) : Screen
+    data class UserFavS(val id: Long) : Screen
 }
 
 class AppVm(private val app: Application) : AndroidViewModel(app) {
